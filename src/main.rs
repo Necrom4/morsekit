@@ -11,6 +11,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+// INFO: following https://morsecode.world/international/timing
+const WPM: u64 = 12; // NOTE: sole varying variable.
+const DIT_MS: u64 = 60_000 / (50 * WPM);
+const DIT_DAH_THRESHOLD: Duration = Duration::from_millis(2 * DIT_MS);
+
 struct RawModeGuard;
 
 impl RawModeGuard {
@@ -54,7 +59,8 @@ fn main() -> io::Result<()> {
                 if let Some(pressed_at) = press_instant
                     && key.code == KeyCode::Char(' ')
                 {
-                    if Instant::now() - pressed_at <= Duration::from_millis(200) {
+                    let duration = Instant::now() - pressed_at;
+                    if duration < DIT_DAH_THRESHOLD {
                         write!(stdout, ".")?;
                     } else {
                         write!(stdout, "-")?;
