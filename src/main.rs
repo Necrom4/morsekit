@@ -1,8 +1,15 @@
 use crossterm::{
-    event::{Event::Key, KeyCode, KeyEventKind, KeyModifiers, read},
+    event::{
+        Event::Key, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, read,
+    },
+    execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    time::{Duration, Instant},
+};
 
 struct RawModeGuard;
 
@@ -22,26 +29,44 @@ impl Drop for RawModeGuard {
 fn main() -> io::Result<()> {
     let _raw_mode = RawModeGuard::enable()?;
     let mut stdout = io::stdout().lock();
+    let mut press_instant: Option<Instant> = None;
+
+    execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+    )?;
 
     loop {
         let Key(key) = read()? else {
             continue;
         };
 
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
-
-        match key.code {
-            KeyCode::Esc => break,
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-            KeyCode::Char(character) => {
-                write!(stdout, "{character}")?;
-                stdout.flush()?;
+        match key.kind {
+            KeyEventKind::Press => match key.code {
+                KeyCode::Esc => break,
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                KeyCode::Char(' ') if press_instant.is_none() => {
+                    press_instant = Some(Instant::now())
+                }
+                _ => {}
+            },
+            KeyEventKind::Release => {
+                if let Some(pressed_at) = press_instant
+                    && key.code == KeyCode::Char(' ')
+                {
+                    if Instant::now() - pressed_at <= Duration::from_millis(200) {
+                        write!(stdout, ".")?;
+                    } else {
+                        write!(stdout, "-")?;
+                    }
+                    stdout.flush()?;
+                    press_instant.take();
+                }
             }
             _ => {}
         }
     }
+    execute!(stdout, PopKeyboardEnhancementFlags)?;
 
     Ok(())
 }
