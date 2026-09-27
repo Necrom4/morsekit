@@ -15,12 +15,13 @@ fn main() -> io::Result<()> {
             continue;
         }
 
-        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-            break;
-        }
-        if let KeyCode::Char(character) = key.code {
-            print!("{character}");
-            io::stdout().flush()?;
+        match key.code {
+            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => break,
+            KeyCode::Char(character) => {
+                print!("{character}");
+                io::stdout().flush()?;
+            }
+            _ => {}
         }
     }
     disable_raw_mode()?;
