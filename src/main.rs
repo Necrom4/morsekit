@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
 
         match key.code {
             KeyCode::Esc => break,
-            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => break,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
             KeyCode::Char(character) => {
                 write!(stdout, "{character}")?;
                 stdout.flush()?;
