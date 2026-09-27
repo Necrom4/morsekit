@@ -11,6 +11,10 @@ fn main() -> io::Result<()> {
             continue;
         };
 
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
         if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
             break;
         }
