@@ -4,8 +4,23 @@ use crossterm::{
 };
 use std::io::{self, Write};
 
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn enable() -> io::Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+    }
+}
+
 fn main() -> io::Result<()> {
-    enable_raw_mode()?;
+    let _raw_mode = RawModeGuard::enable()?;
     let mut stdout = io::stdout().lock();
 
     loop {
@@ -27,6 +42,6 @@ fn main() -> io::Result<()> {
             _ => {}
         }
     }
-    disable_raw_mode()?;
+
     Ok(())
 }
