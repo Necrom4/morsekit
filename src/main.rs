@@ -6,6 +6,8 @@ use std::io::{self, Write};
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
+    let mut stdout = io::stdout().lock();
+
     loop {
         let Key(key) = read()? else {
             continue;
@@ -19,8 +21,8 @@ fn main() -> io::Result<()> {
             KeyCode::Esc => break,
             KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => break,
             KeyCode::Char(character) => {
-                print!("{character}");
-                io::stdout().flush()?;
+                write!(stdout, "{character}")?;
+                stdout.flush()?;
             }
             _ => {}
         }
