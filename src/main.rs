@@ -1,7 +1,7 @@
 use crossterm::{
     event::{
         Event::Key, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, read,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll, read,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
@@ -15,6 +15,10 @@ use std::{
 const WPM: u64 = 12; // NOTE: sole varying variable.
 const DIT_MS: u64 = 60_000 / (50 * WPM);
 const DIT_DAH_THRESHOLD: Duration = Duration::from_millis(2 * DIT_MS);
+const LETTER_GAP_THRESHOLD: Duration = Duration::from_millis(2 * DIT_MS);
+const WORD_GAP_THRESHOLD: Duration = Duration::from_millis(5 * DIT_MS);
+
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 struct RawModeGuard;
 
@@ -35,6 +39,8 @@ fn main() -> io::Result<()> {
     let _raw_mode = RawModeGuard::enable()?;
     let mut stdout = io::stdout().lock();
     let mut press_instant: Option<Instant> = None;
+    let mut release_instant: Option<Instant> = None;
+    let mut letter_ended = false;
 
     execute!(
         stdout,
@@ -42,6 +48,24 @@ fn main() -> io::Result<()> {
     )?;
 
     loop {
+        if let Some(released_at) = release_instant {
+            let gap = released_at.elapsed();
+            if !letter_ended && gap >= LETTER_GAP_THRESHOLD {
+                write!(stdout, " ")?;
+                stdout.flush()?;
+                letter_ended = true;
+            }
+            if gap >= WORD_GAP_THRESHOLD {
+                write!(stdout, "/ ")?;
+                stdout.flush()?;
+                release_instant = None;
+            }
+        }
+
+        if !poll(POLL_INTERVAL)? {
+            continue;
+        }
+
         let Key(key) = read()? else {
             continue;
         };
@@ -51,7 +75,9 @@ fn main() -> io::Result<()> {
                 KeyCode::Esc => break,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                 KeyCode::Char(' ') if press_instant.is_none() => {
-                    press_instant = Some(Instant::now())
+                    press_instant = Some(Instant::now());
+                    release_instant = None;
+                    letter_ended = false;
                 }
                 _ => {}
             },
@@ -59,7 +85,8 @@ fn main() -> io::Result<()> {
                 if let Some(pressed_at) = press_instant
                     && key.code == KeyCode::Char(' ')
                 {
-                    let duration = Instant::now() - pressed_at;
+                    let released_at = Instant::now();
+                    let duration = released_at - pressed_at;
                     if duration < DIT_DAH_THRESHOLD {
                         write!(stdout, ".")?;
                     } else {
@@ -67,6 +94,7 @@ fn main() -> io::Result<()> {
                     }
                     stdout.flush()?;
                     press_instant.take();
+                    release_instant = Some(released_at);
                 }
             }
             _ => {}
