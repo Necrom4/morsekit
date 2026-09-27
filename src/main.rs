@@ -16,6 +16,7 @@ fn main() -> io::Result<()> {
         }
 
         match key.code {
+            KeyCode::Esc => break,
             KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => break,
             KeyCode::Char(character) => {
                 print!("{character}");
