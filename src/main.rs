@@ -20,6 +20,10 @@ struct Args {
     /// Morse speed in words per minute
     #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
     wpm: u64,
+
+    /// Mute beep sound
+    #[arg(short, long)]
+    mute: bool,
 }
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -115,6 +119,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let letter_gap_threshold: Duration = Duration::from_millis(2 * dit_ms);
     let word_gap_threshold: Duration = Duration::from_millis(5 * dit_ms);
 
+    let mute = args.mute;
+
     let mut stdout = io::stdout().lock();
 
     let _raw_mode = RawModeGuard::enable()?;
@@ -186,10 +192,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             KeyEventKind::Press => match key.code {
                 KeyCode::Char(' ') if press_instant.is_none() => {
                     press_instant = Some(Instant::now());
-                    let player = Player::connect_new(audio_output.mixer());
-                    let source = SineWave::new(600.0).amplify(0.20);
-                    player.append(source);
-                    tone = Some(player);
+                    if !mute {
+                        let player = Player::connect_new(audio_output.mixer());
+                        let source = SineWave::new(600.0).amplify(0.20);
+                        player.append(source);
+                        tone = Some(player);
+                    }
                     release_instant = None;
                     letter_ended = false;
                 }
