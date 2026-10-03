@@ -117,25 +117,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut release_instant: Option<Instant> = None;
     let mut letter_ended = false;
 
-    let mut needs_redraw = false;
     let mut morse_line = String::new();
+    let mut redraw_morse_line = false;
+    let mut redraw_translation_line = false;
 
     loop {
         if let Some(released_at) = release_instant {
             let gap = released_at.elapsed();
             if !letter_ended && gap >= LETTER_GAP_THRESHOLD {
                 morse_line.push(' ');
-                needs_redraw = true;
+                redraw_morse_line = true;
+                redraw_translation_line = true;
                 letter_ended = true;
             }
             if gap >= WORD_GAP_THRESHOLD {
                 morse_line.push_str("/ ");
-                needs_redraw = true;
+                redraw_morse_line = true;
+                redraw_translation_line = true;
                 release_instant = None;
             }
         }
 
-        if needs_redraw {
+        if redraw_morse_line {
             execute!(
                 stdout,
                 crossterm::cursor::MoveTo(start_column, start_row),
@@ -143,6 +146,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             write!(stdout, "{morse_line}")?;
             stdout.flush()?;
+            redraw_morse_line = false;
+        }
+
+        if redraw_translation_line {
             execute!(
                 stdout,
                 crossterm::cursor::MoveTo(start_column, start_row + 1),
@@ -151,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // TODO: shouldn't translate the whole line on each redraw.
             write!(stdout, "{}", translate(&morse_line))?;
             stdout.flush()?;
-            needs_redraw = false;
+            redraw_translation_line = false;
         }
 
         if !poll(POLL_INTERVAL)? {
@@ -191,7 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         morse_line.push('-');
                     }
-                    needs_redraw = true;
+                    redraw_morse_line = true;
                     press_instant.take();
                     release_instant = Some(released_at);
                 }
