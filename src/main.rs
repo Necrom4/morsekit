@@ -191,6 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         morse_line.push('-');
                     }
+                    needs_redraw = true;
                     press_instant.take();
                     release_instant = Some(released_at);
                 }
