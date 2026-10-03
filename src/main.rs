@@ -56,7 +56,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _raw_mode = RawModeGuard::enable()?;
 
-    let audio_output = DeviceSinkBuilder::open_default_sink()?;
+    let mut audio_output = DeviceSinkBuilder::open_default_sink()?;
+    audio_output.log_on_drop(false);
     let mut tone: Option<Player> = None;
 
     let mut press_instant: Option<Instant> = None;
