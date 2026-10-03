@@ -1,3 +1,4 @@
+use clap::Parser;
 use crossterm::{
     event::{
         Event::Key, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
@@ -13,12 +14,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-// INFO: following https://morsecode.world/international/timing
-const WPM: u64 = 12; // NOTE: sole varying variable.
-const DIT_MS: u64 = 60_000 / (50 * WPM);
-const DIT_DAH_THRESHOLD: Duration = Duration::from_millis(2 * DIT_MS);
-const LETTER_GAP_THRESHOLD: Duration = Duration::from_millis(2 * DIT_MS);
-const WORD_GAP_THRESHOLD: Duration = Duration::from_millis(5 * DIT_MS);
+#[derive(Parser, Debug)]
+#[command(about = "Live Morse code translator")]
+struct Args {
+    /// Morse speed in words per minute
+    #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
+    wpm: u64,
+}
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -105,6 +107,14 @@ fn translate(line: &str) -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    // INFO: following https://morsecode.world/international/timing
+    let dit_ms: u64 = 60_000 / (50 * args.wpm);
+    let dit_dah_threshold: Duration = Duration::from_millis(2 * dit_ms);
+    let letter_gap_threshold: Duration = Duration::from_millis(2 * dit_ms);
+    let word_gap_threshold: Duration = Duration::from_millis(5 * dit_ms);
+
     let mut stdout = io::stdout().lock();
 
     let _raw_mode = RawModeGuard::enable()?;
@@ -133,12 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         if let Some(released_at) = release_instant {
             let gap = released_at.elapsed();
-            if !letter_ended && gap >= LETTER_GAP_THRESHOLD {
+            if !letter_ended && gap >= letter_gap_threshold {
                 morse_line.push(' ');
                 needs_redraw = true;
                 letter_ended = true;
             }
-            if gap >= WORD_GAP_THRESHOLD {
+            if gap >= word_gap_threshold {
                 morse_line.push_str("/ ");
                 needs_redraw = true;
                 release_instant = None;
@@ -200,7 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         player.stop();
                     }
                     let duration = released_at - pressed_at;
-                    if duration < DIT_DAH_THRESHOLD {
+                    if duration < dit_dah_threshold {
                         morse_line.push('.');
                     } else {
                         morse_line.push('-');
