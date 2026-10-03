@@ -21,17 +21,32 @@ const WORD_GAP_THRESHOLD: Duration = Duration::from_millis(5 * DIT_MS);
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-struct RawModeGuard;
+struct RawModeGuard {
+    keyboard_enhancement_enabled: bool,
+}
 
 impl RawModeGuard {
     fn enable() -> io::Result<Self> {
         enable_raw_mode()?;
-        Ok(Self)
+
+        let mut guard = Self {
+            keyboard_enhancement_enabled: false,
+        };
+        execute!(
+            io::stdout(),
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        )?;
+        guard.keyboard_enhancement_enabled = true;
+
+        Ok(guard)
     }
 }
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
+        if self.keyboard_enhancement_enabled {
+            let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+        }
         let _ = disable_raw_mode();
     }
 }
@@ -47,11 +62,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut press_instant: Option<Instant> = None;
     let mut release_instant: Option<Instant> = None;
     let mut letter_ended = false;
-
-    execute!(
-        stdout,
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-    )?;
 
     loop {
         if let Some(released_at) = release_instant {
@@ -113,7 +123,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
     }
-    execute!(stdout, PopKeyboardEnhancementFlags)?;
 
     Ok(())
 }
