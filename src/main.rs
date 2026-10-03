@@ -8,6 +8,7 @@ use crossterm::{
 };
 use rodio::{DeviceSinkBuilder, Player, Source, source::SineWave};
 use std::{
+    collections::HashMap,
     io::{self, Write},
     time::{Duration, Instant},
 };
@@ -51,9 +52,61 @@ impl Drop for RawModeGuard {
     }
 }
 
+fn translate(line: &str) -> String {
+    // TODO: this shouldn't be reconstructured on every translation.
+    let lookup: HashMap<&str, char> = HashMap::from([
+        (".-", 'A'),
+        ("-...", 'B'),
+        ("-.-.", 'C'),
+        ("-..", 'D'),
+        (".", 'E'),
+        ("..-.", 'F'),
+        ("--.", 'G'),
+        ("....", 'H'),
+        ("..", 'I'),
+        (".---", 'J'),
+        ("-.-", 'K'),
+        (".-..", 'L'),
+        ("--", 'M'),
+        ("-.", 'N'),
+        ("---", 'O'),
+        (".--.", 'P'),
+        ("--.-", 'Q'),
+        (".-.", 'R'),
+        ("...", 'S'),
+        ("-", 'T'),
+        ("..-", 'U'),
+        ("...-", 'V'),
+        (".--", 'W'),
+        ("-..-", 'X'),
+        ("-.--", 'Y'),
+        ("--..", 'Z'),
+        ("-----", '0'),
+        (".----", '1'),
+        ("..---", '2'),
+        ("...--", '3'),
+        ("....-", '4'),
+        (".....", '5'),
+        ("-....", '6'),
+        ("--...", '7'),
+        ("---..", '8'),
+        ("----.", '9'),
+        ("/", ' '),
+    ]);
+
+    let mut translation = String::new();
+
+    for morse_group in line.split_whitespace() {
+        let translated_char = lookup.get(morse_group).copied().unwrap_or('?');
+        translation.push(translated_char);
+    }
+
+    translation
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = io::stdout().lock();
-
+    let (start_column, start_row) = crossterm::cursor::position()?;
     let _raw_mode = RawModeGuard::enable()?;
 
     let mut audio_output = DeviceSinkBuilder::open_default_sink()?;
@@ -65,18 +118,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut letter_ended = false;
 
     let mut needs_redraw = false;
-    let mut line = String::new();
+    let mut morse_line = String::new();
 
     loop {
         if let Some(released_at) = release_instant {
             let gap = released_at.elapsed();
             if !letter_ended && gap >= LETTER_GAP_THRESHOLD {
-                line.push(' ');
+                morse_line.push(' ');
                 needs_redraw = true;
                 letter_ended = true;
             }
             if gap >= WORD_GAP_THRESHOLD {
-                line.push_str("/ ");
+                morse_line.push_str("/ ");
                 needs_redraw = true;
                 release_instant = None;
             }
@@ -85,10 +138,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if needs_redraw {
             execute!(
                 stdout,
-                crossterm::cursor::MoveToColumn(0),
-                crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
+                crossterm::cursor::MoveTo(start_column, start_row),
+                crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
             )?;
-            write!(stdout, "{line}")?;
+            write!(stdout, "{morse_line}")?;
+            stdout.flush()?;
+            execute!(
+                stdout,
+                crossterm::cursor::MoveTo(start_column, start_row + 1),
+                crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+            )?;
+            // TODO: shouldn't translate the whole line on each redraw.
+            write!(stdout, "{}", translate(&morse_line))?;
             stdout.flush()?;
             needs_redraw = false;
         }
@@ -126,11 +187,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let duration = released_at - pressed_at;
                     if duration < DIT_DAH_THRESHOLD {
-                        line.push('.');
+                        morse_line.push('.');
                     } else {
-                        line.push('-');
+                        morse_line.push('-');
                     }
-                    needs_redraw = true;
                     press_instant.take();
                     release_instant = Some(released_at);
                 }
