@@ -64,19 +64,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut release_instant: Option<Instant> = None;
     let mut letter_ended = false;
 
+    let mut needs_redraw = false;
+    let mut line = String::new();
+
     loop {
         if let Some(released_at) = release_instant {
             let gap = released_at.elapsed();
             if !letter_ended && gap >= LETTER_GAP_THRESHOLD {
-                write!(stdout, " ")?;
-                stdout.flush()?;
+                line.push(' ');
+                needs_redraw = true;
                 letter_ended = true;
             }
             if gap >= WORD_GAP_THRESHOLD {
-                write!(stdout, "/ ")?;
-                stdout.flush()?;
+                line.push_str("/ ");
+                needs_redraw = true;
                 release_instant = None;
             }
+        }
+
+        if needs_redraw {
+            execute!(
+                stdout,
+                crossterm::cursor::MoveToColumn(0),
+                crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
+            )?;
+            write!(stdout, "{line}")?;
+            stdout.flush()?;
+            needs_redraw = false;
         }
 
         if !poll(POLL_INTERVAL)? {
@@ -112,11 +126,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let duration = released_at - pressed_at;
                     if duration < DIT_DAH_THRESHOLD {
-                        write!(stdout, ".")?;
+                        line.push('.');
                     } else {
-                        write!(stdout, "-")?;
+                        line.push('-');
                     }
-                    stdout.flush()?;
+                    needs_redraw = true;
                     press_instant.take();
                     release_instant = Some(released_at);
                 }
