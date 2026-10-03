@@ -574,7 +574,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "morse-trainer"
+name = "morsekit"
 version = "0.1.0"
 dependencies = [
  "clap",
