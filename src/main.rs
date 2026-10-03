@@ -6,6 +6,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+use rodio::{DeviceSinkBuilder, Player, Source, source::SineWave};
 use std::{
     io::{self, Write},
     time::{Duration, Instant},
@@ -36,8 +37,13 @@ impl Drop for RawModeGuard {
 }
 
 fn main() -> io::Result<()> {
-    let _raw_mode = RawModeGuard::enable()?;
     let mut stdout = io::stdout().lock();
+
+    let _raw_mode = RawModeGuard::enable()?;
+
+    let audio_output = DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
+    let mut tone: Option<Player> = None;
+
     let mut press_instant: Option<Instant> = None;
     let mut release_instant: Option<Instant> = None;
     let mut letter_ended = false;
@@ -76,6 +82,10 @@ fn main() -> io::Result<()> {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                 KeyCode::Char(' ') if press_instant.is_none() => {
                     press_instant = Some(Instant::now());
+                    let player = Player::connect_new(audio_output.mixer());
+                    let source = SineWave::new(600.0).amplify(0.20);
+                    player.append(source);
+                    tone = Some(player);
                     release_instant = None;
                     letter_ended = false;
                 }
@@ -86,6 +96,9 @@ fn main() -> io::Result<()> {
                     && key.code == KeyCode::Char(' ')
                 {
                     let released_at = Instant::now();
+                    if let Some(player) = tone.take() {
+                        player.stop();
+                    }
                     let duration = released_at - pressed_at;
                     if duration < DIT_DAH_THRESHOLD {
                         write!(stdout, ".")?;
