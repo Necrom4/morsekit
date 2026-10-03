@@ -106,8 +106,18 @@ fn translate(line: &str) -> String {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = io::stdout().lock();
-    let (start_column, start_row) = crossterm::cursor::position()?;
+
     let _raw_mode = RawModeGuard::enable()?;
+
+    let (start_column, mut start_row) = crossterm::cursor::position()?;
+    let (_, rows) = crossterm::terminal::size()?;
+    if rows < 2 {
+        return Err(io::Error::other("terminal needs at least two rows").into());
+    }
+    if start_row.saturating_add(1) >= rows {
+        execute!(stdout, crossterm::terminal::ScrollUp(1))?;
+        start_row = rows - 2;
+    }
 
     let mut audio_output = DeviceSinkBuilder::open_default_sink()?;
     audio_output.log_on_drop(false);
