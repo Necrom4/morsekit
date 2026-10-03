@@ -174,8 +174,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match key.kind {
             KeyEventKind::Press => match key.code {
-                KeyCode::Esc => break,
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                 KeyCode::Char(' ') if press_instant.is_none() => {
                     press_instant = Some(Instant::now());
                     let player = Player::connect_new(audio_output.mixer());
@@ -188,6 +186,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {}
             },
             KeyEventKind::Release => {
+                if key.code == KeyCode::Esc
+                    || (key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL))
+                {
+                    break;
+                }
                 if let Some(pressed_at) = press_instant
                     && key.code == KeyCode::Char(' ')
                 {
