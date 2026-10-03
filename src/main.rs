@@ -36,12 +36,12 @@ impl Drop for RawModeGuard {
     }
 }
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = io::stdout().lock();
 
     let _raw_mode = RawModeGuard::enable()?;
 
-    let audio_output = DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
+    let audio_output = DeviceSinkBuilder::open_default_sink()?;
     let mut tone: Option<Player> = None;
 
     let mut press_instant: Option<Instant> = None;
