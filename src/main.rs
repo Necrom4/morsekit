@@ -15,7 +15,7 @@ use std::{
 };
 
 #[derive(Parser, Debug)]
-#[command(about = "Live Morse code translator")]
+#[command(version, about = "Live Morse code translator")]
 struct Args {
     /// Morse speed in words per minute
     #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
