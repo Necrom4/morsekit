@@ -1,0 +1,40 @@
+amends "package://github.com/jdx/hk/releases/download/v2.4.0/hk@2.4.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.4.0/hk@2.4.0#/Builtins.pkl"
+
+// Fast checks on staged files; hk stashes unstaged changes before fixing.
+steps {
+  ["large-files"] = Builtins.check_added_large_files
+  ["merge-conflicts"] = Builtins.check_merge_conflict
+  ["private-keys"] = Builtins.detect_private_key
+  ["newlines"] = Builtins.newlines
+  ["trailing-whitespace"] = Builtins.trailing_whitespace
+  ["toml-format"] = Builtins.taplo_format
+  ["toml-lint"] = Builtins.taplo
+  ["rustfmt"] {
+    glob = "**/*.rs"
+    // Check selected files only; `cargo fmt --all` can reject unrelated unstaged edits.
+    check = "rustfmt --edition 2024 --check --config skip_children=true {{files}}"
+  }
+}
+
+// Whole-project checks are too slow for each commit.
+local project = new Mapping<String, Step> {
+  ["clippy"] {
+    glob = List("**/*.rs", "Cargo.toml", "Cargo.lock")
+    check = "cargo clippy --all-targets --locked -- -D warnings"
+    exclusive = true
+  }
+  ["test"] {
+    glob = List("**/*.rs", "Cargo.toml", "Cargo.lock")
+    check = "cargo test --locked"
+    exclusive = true
+  }
+}
+
+hooks {
+  ["pre-push"] { steps = project }
+  ["check"] { steps = project }
+  ["commit-msg"] {
+    steps { ["conventional-commit"] = Builtins.check_conventional_commit }
+  }
+}

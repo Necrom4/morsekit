@@ -1,3 +1,19 @@
+# First-time setup: `mise install`, then `mise run hooks` to opt into git hooks.
+# `mise run check` runs the same checks over the full tracked repository.
 [tools]
 rust = "1.99"
 rust-analyzer = "latest"
+hk = "2.4.0"
+taplo = "latest"
+
+[env]
+# Make git hooks use this project's mise-managed tools even without shell activation.
+HK_MISE = "1"
+
+[tasks."hooks:install"]
+description = "Install hk git hooks for this clone"
+run = "hk install --mise"
+
+[tasks."hooks:check"]
+description = "Run all configured checks against the repository"
+run = "hk check --all"
