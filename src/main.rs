@@ -137,6 +137,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         execute!(stdout, crossterm::terminal::ScrollUp(1))?;
         start_row = rows - 2;
     }
+    let mut current_morse_column = start_column;
+    let current_morse_row = start_row;
+    let mut current_translation_column = start_column;
+    let current_translation_row = start_row + 1;
 
     // Following https://morsecode.world/international/timing.
     let dit_ms = 60_000 / (50 * args.wpm);
@@ -153,8 +157,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut last_signal_ended_at: Option<Instant> = None;
     let mut letter_gap_added = false;
 
-    // Display state
-    let mut display_needs_redraw = false;
     let mut current_letter = String::new();
     let mut morse_input = String::new();
     let mut translation = String::new();
@@ -167,37 +169,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 morse_input.push(' ');
                 translation.push(translate_letter(&current_letter));
                 current_letter.clear();
-                display_needs_redraw = true;
+                execute!(
+                    stdout,
+                    crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
+                )?;
+                write!(stdout, " ")?;
+                stdout.flush()?;
+                current_morse_column += 1;
+                current_translation_column += 1;
                 letter_gap_added = true;
             }
             if gap >= word_gap_threshold {
                 morse_input.push_str("/ ");
                 translation.push(' ');
-                display_needs_redraw = true;
+                execute!(
+                    stdout,
+                    crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
+                )?;
+                write!(stdout, "/ ")?;
+                stdout.flush()?;
+                current_morse_column += 2;
+                execute!(
+                    stdout,
+                    crossterm::cursor::MoveTo(current_translation_column, current_translation_row,),
+                )?;
+                write!(stdout, " ")?;
+                stdout.flush()?;
+                current_translation_column += 1;
                 last_signal_ended_at = None;
             }
-        }
-
-        if display_needs_redraw {
-            execute!(
-                stdout,
-                crossterm::cursor::MoveTo(start_column, start_row),
-                crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
-            )?;
-            write!(stdout, "{morse_input}")?;
-            write!(stdout, "{current_letter}")?;
-            stdout.flush()?;
-            execute!(
-                stdout,
-                crossterm::cursor::MoveTo(start_column, start_row + 1),
-                crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
-            )?;
-            write!(stdout, "{translation}")?;
-            if !current_letter.is_empty() {
-                write!(stdout, "{}", translate_letter(&current_letter))?;
-            }
-            stdout.flush()?;
-            display_needs_redraw = false;
         }
 
         if !poll(POLL_INTERVAL)? {
@@ -238,12 +238,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         player.stop();
                     }
                     let duration = signal_ended_at - signal_started_at;
-                    if duration < dit_dah_threshold {
-                        current_letter.push('.');
+                    let signal = if duration < dit_dah_threshold {
+                        '.'
                     } else {
-                        current_letter.push('-');
-                    }
-                    display_needs_redraw = true;
+                        '-'
+                    };
+                    current_letter.push(signal);
+                    execute!(
+                        stdout,
+                        crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
+                    )?;
+                    write!(stdout, "{signal}")?;
+                    stdout.flush()?;
+                    current_morse_column += 1;
+                    execute!(
+                        stdout,
+                        crossterm::cursor::MoveTo(
+                            current_translation_column,
+                            current_translation_row,
+                        ),
+                    )?;
+                    write!(stdout, "{}", translate_letter(&current_letter))?;
+                    stdout.flush()?;
                     key_pressed_at.take();
                     last_signal_ended_at = Some(signal_ended_at);
                 }
