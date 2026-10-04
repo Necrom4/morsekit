@@ -118,7 +118,7 @@ fn translate(line: &str) -> String {
     let mut translation = String::new();
 
     for morse_group in line.split_whitespace() {
-        let translated_char = MORSE_TABLE.get(morse_group).copied().unwrap_or('?');
+        let translated_char = MORSE_TABLE.get(morse_group).copied().unwrap_or('_');
         translation.push(translated_char);
     }
 
