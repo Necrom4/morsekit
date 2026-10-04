@@ -119,8 +119,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let letter_gap_threshold: Duration = Duration::from_millis(2 * dit_ms);
     let word_gap_threshold: Duration = Duration::from_millis(5 * dit_ms);
 
-    let mute = args.mute;
-
     let mut stdout = io::stdout().lock();
 
     let _raw_mode = RawModeGuard::enable()?;
@@ -192,7 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             KeyEventKind::Press => match key.code {
                 KeyCode::Char(' ') if key_pressed_at.is_none() => {
                     key_pressed_at = Some(Instant::now());
-                    if !mute {
+                    if !args.mute {
                         let player = Player::connect_new(audio_device.mixer());
                         let source = SineWave::new(600.0).amplify(0.20);
                         player.append(source);
