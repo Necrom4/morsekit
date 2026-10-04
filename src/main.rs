@@ -135,39 +135,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         start_row = rows - 2;
     }
 
-    let mut audio_output = DeviceSinkBuilder::open_default_sink()?;
-    audio_output.log_on_drop(false);
-    let mut tone: Option<Player> = None;
+    let mut audio_device = DeviceSinkBuilder::open_default_sink()?;
+    audio_device.log_on_drop(false);
+    let mut active_tone: Option<Player> = None;
 
-    let mut press_instant: Option<Instant> = None;
-    let mut release_instant: Option<Instant> = None;
-    let mut letter_ended = false;
+    let mut key_pressed_at: Option<Instant> = None;
+    let mut last_signal_ended_at: Option<Instant> = None;
+    let mut letter_gap_added = false;
 
-    let mut needs_redraw = false;
-    let mut morse_line = String::new();
+    let mut display_needs_redraw = false;
+    let mut morse_input = String::new();
 
     loop {
-        if let Some(released_at) = release_instant {
-            let gap = released_at.elapsed();
-            if !letter_ended && gap >= letter_gap_threshold {
-                morse_line.push(' ');
-                needs_redraw = true;
-                letter_ended = true;
+        if let Some(signal_ended_at) = last_signal_ended_at {
+            let gap = signal_ended_at.elapsed();
+            if !letter_gap_added && gap >= letter_gap_threshold {
+                morse_input.push(' ');
+                display_needs_redraw = true;
+                letter_gap_added = true;
             }
             if gap >= word_gap_threshold {
-                morse_line.push_str("/ ");
-                needs_redraw = true;
-                release_instant = None;
+                morse_input.push_str("/ ");
+                display_needs_redraw = true;
+                last_signal_ended_at = None;
             }
         }
 
-        if needs_redraw {
+        if display_needs_redraw {
             execute!(
                 stdout,
                 crossterm::cursor::MoveTo(start_column, start_row),
                 crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
             )?;
-            write!(stdout, "{morse_line}")?;
+            write!(stdout, "{morse_input}")?;
             stdout.flush()?;
             execute!(
                 stdout,
@@ -175,9 +175,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
             )?;
             // TODO: shouldn't translate the whole line on each redraw.
-            write!(stdout, "{}", translate(&morse_line))?;
+            write!(stdout, "{}", translate(&morse_input))?;
             stdout.flush()?;
-            needs_redraw = false;
+            display_needs_redraw = false;
         }
 
         if !poll(POLL_INTERVAL)? {
@@ -190,16 +190,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match key.kind {
             KeyEventKind::Press => match key.code {
-                KeyCode::Char(' ') if press_instant.is_none() => {
-                    press_instant = Some(Instant::now());
+                KeyCode::Char(' ') if key_pressed_at.is_none() => {
+                    key_pressed_at = Some(Instant::now());
                     if !mute {
-                        let player = Player::connect_new(audio_output.mixer());
+                        let player = Player::connect_new(audio_device.mixer());
                         let source = SineWave::new(600.0).amplify(0.20);
                         player.append(source);
-                        tone = Some(player);
+                        active_tone = Some(player);
                     }
-                    release_instant = None;
-                    letter_ended = false;
+                    last_signal_ended_at = None;
+                    letter_gap_added = false;
                 }
                 _ => {}
             },
@@ -210,22 +210,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     break;
                 }
-                if let Some(pressed_at) = press_instant
+                if let Some(signal_started_at) = key_pressed_at
                     && key.code == KeyCode::Char(' ')
                 {
-                    let released_at = Instant::now();
-                    if let Some(player) = tone.take() {
+                    let signal_ended_at = Instant::now();
+                    if let Some(player) = active_tone.take() {
                         player.stop();
                     }
-                    let duration = released_at - pressed_at;
+                    let duration = signal_ended_at - signal_started_at;
                     if duration < dit_dah_threshold {
-                        morse_line.push('.');
+                        morse_input.push('.');
                     } else {
-                        morse_line.push('-');
+                        morse_input.push('-');
                     }
-                    needs_redraw = true;
-                    press_instant.take();
-                    release_instant = Some(released_at);
+                    display_needs_redraw = true;
+                    key_pressed_at.take();
+                    last_signal_ended_at = Some(signal_ended_at);
                 }
             }
             _ => {}
