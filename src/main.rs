@@ -1,10 +1,12 @@
 use clap::Parser;
 use crossterm::{
+    cursor::MoveTo,
     event::{
         Event::Key, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll, read,
     },
-    execute,
+    execute, queue,
+    style::Print,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use rodio::{DeviceSinkBuilder, Player, Source, source::SineWave};
@@ -164,29 +166,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let gap = signal_ended_at.elapsed();
             if !letter_gap_added && gap >= letter_gap_threshold {
                 current_letter.clear();
-                execute!(
+                queue!(
                     stdout,
-                    crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
+                    MoveTo(current_morse_column, current_morse_row),
+                    Print(" ")
                 )?;
-                write!(stdout, " ")?;
                 stdout.flush()?;
                 current_morse_column += 1;
                 current_translation_column += 1;
                 letter_gap_added = true;
             }
             if gap >= word_gap_threshold {
-                execute!(
+                queue!(
                     stdout,
-                    crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
+                    MoveTo(current_morse_column, current_morse_row),
+                    Print("/ ")
                 )?;
-                write!(stdout, "/ ")?;
                 stdout.flush()?;
                 current_morse_column += 2;
-                execute!(
+                queue!(
                     stdout,
-                    crossterm::cursor::MoveTo(current_translation_column, current_translation_row,),
+                    MoveTo(current_translation_column, current_translation_row,),
+                    Print(" ")
                 )?;
-                write!(stdout, " ")?;
                 stdout.flush()?;
                 current_translation_column += 1;
                 last_signal_ended_at = None;
@@ -237,21 +239,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         '-'
                     };
                     current_letter.push(signal);
-                    execute!(
+                    queue!(
                         stdout,
-                        crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
+                        MoveTo(current_morse_column, current_morse_row),
+                        Print(signal)
                     )?;
-                    write!(stdout, "{signal}")?;
                     stdout.flush()?;
                     current_morse_column += 1;
-                    execute!(
+                    queue!(
                         stdout,
-                        crossterm::cursor::MoveTo(
-                            current_translation_column,
-                            current_translation_row,
-                        ),
+                        MoveTo(current_translation_column, current_translation_row,),
+                        Print(translate_letter(&current_letter))
                     )?;
-                    write!(stdout, "{}", translate_letter(&current_letter))?;
                     stdout.flush()?;
                     key_pressed_at.take();
                     last_signal_ended_at = Some(signal_ended_at);
