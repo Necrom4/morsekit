@@ -11,6 +11,7 @@ use rodio::{DeviceSinkBuilder, Player, Source, source::SineWave};
 use std::{
     collections::HashMap,
     io::{self, Write},
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 
@@ -28,39 +29,8 @@ struct Args {
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-struct RawModeGuard {
-    keyboard_enhancement_enabled: bool,
-}
-
-impl RawModeGuard {
-    fn enable() -> io::Result<Self> {
-        enable_raw_mode()?;
-
-        let mut guard = Self {
-            keyboard_enhancement_enabled: false,
-        };
-        execute!(
-            io::stdout(),
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-        )?;
-        guard.keyboard_enhancement_enabled = true;
-
-        Ok(guard)
-    }
-}
-
-impl Drop for RawModeGuard {
-    fn drop(&mut self) {
-        if self.keyboard_enhancement_enabled {
-            let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
-        }
-        let _ = disable_raw_mode();
-    }
-}
-
-fn translate(line: &str) -> String {
-    // TODO: this shouldn't be reconstructured on every translation.
-    let lookup: HashMap<&str, char> = HashMap::from([
+static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
+    HashMap::from([
         (".-", 'A'),
         ("-...", 'B'),
         ("-.-.", 'C'),
@@ -98,12 +68,44 @@ fn translate(line: &str) -> String {
         ("---..", '8'),
         ("----.", '9'),
         ("/", ' '),
-    ]);
+    ])
+});
 
+struct RawModeGuard {
+    keyboard_enhancement_enabled: bool,
+}
+
+impl RawModeGuard {
+    fn enable() -> io::Result<Self> {
+        enable_raw_mode()?;
+
+        let mut guard = Self {
+            keyboard_enhancement_enabled: false,
+        };
+        execute!(
+            io::stdout(),
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        )?;
+        guard.keyboard_enhancement_enabled = true;
+
+        Ok(guard)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        if self.keyboard_enhancement_enabled {
+            let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+        }
+        let _ = disable_raw_mode();
+    }
+}
+
+fn translate(line: &str) -> String {
     let mut translation = String::new();
 
     for morse_group in line.split_whitespace() {
-        let translated_char = lookup.get(morse_group).copied().unwrap_or('?');
+        let translated_char = MORSE_TABLE.get(morse_group).copied().unwrap_or('?');
         translation.push(translated_char);
     }
 
