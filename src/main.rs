@@ -81,13 +81,15 @@ static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
 #[derive(Parser, Debug)]
 #[command(version, about = "Live Morse code translator")]
 struct Args {
-    /// Morse speed in words per minute
-    #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
-    wpm: u64,
-
     /// Mute beep sound
     #[arg(short, long)]
     mute: bool,
+    /// Tone frequency in Hz
+    #[arg(short, long, default_value_t = 600.0)]
+    pitch: f32,
+    /// Morse speed in words per minute
+    #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
+    wpm: u64,
 }
 
 struct RawModeGuard {
@@ -214,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     key_pressed_at = Some(Instant::now());
                     if let Some(audio_device) = &audio_device {
                         let player = Player::connect_new(audio_device.mixer());
-                        let source = SineWave::new(600.0).amplify(0.20);
+                        let source = SineWave::new(args.pitch).amplify(0.20);
                         player.append(source);
                         active_tone = Some(player);
                     }
