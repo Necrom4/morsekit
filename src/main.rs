@@ -118,15 +118,8 @@ impl Drop for RawModeGuard {
     }
 }
 
-fn translate(line: &str) -> String {
-    let mut translation = String::new();
-
-    for morse_group in line.split_whitespace() {
-        let translated_char = MORSE_TABLE.get(morse_group).copied().unwrap_or('_');
-        translation.push(translated_char);
-    }
-
-    translation
+fn translate_letter(morse: &str) -> char {
+    MORSE_TABLE.get(morse).copied().unwrap_or('_')
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -162,18 +155,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Display state
     let mut display_needs_redraw = false;
+    let mut current_letter = String::new();
     let mut morse_input = String::new();
+    let mut translation = String::new();
 
     loop {
         if let Some(signal_ended_at) = last_signal_ended_at {
             let gap = signal_ended_at.elapsed();
             if !letter_gap_added && gap >= letter_gap_threshold {
+                morse_input.push_str(&current_letter);
                 morse_input.push(' ');
+                translation.push(translate_letter(&current_letter));
+                current_letter.clear();
                 display_needs_redraw = true;
                 letter_gap_added = true;
             }
             if gap >= word_gap_threshold {
                 morse_input.push_str("/ ");
+                translation.push(' ');
                 display_needs_redraw = true;
                 last_signal_ended_at = None;
             }
@@ -186,14 +185,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
             )?;
             write!(stdout, "{morse_input}")?;
+            write!(stdout, "{current_letter}")?;
             stdout.flush()?;
             execute!(
                 stdout,
                 crossterm::cursor::MoveTo(start_column, start_row + 1),
                 crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
             )?;
-            // TODO: shouldn't translate the whole line on each redraw.
-            write!(stdout, "{}", translate(&morse_input))?;
+            write!(stdout, "{translation}")?;
+            if !current_letter.is_empty() {
+                write!(stdout, "{}", translate_letter(&current_letter))?;
+            }
             stdout.flush()?;
             display_needs_redraw = false;
         }
@@ -237,9 +239,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let duration = signal_ended_at - signal_started_at;
                     if duration < dit_dah_threshold {
-                        morse_input.push('.');
+                        current_letter.push('.');
                     } else {
-                        morse_input.push('-');
+                        current_letter.push('-');
                     }
                     display_needs_redraw = true;
                     key_pressed_at.take();
