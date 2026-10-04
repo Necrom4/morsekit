@@ -150,8 +150,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let letter_gap_threshold = Duration::from_millis(2 * dit_ms);
     let word_gap_threshold = Duration::from_millis(5 * dit_ms);
 
-    let mut audio_device = DeviceSinkBuilder::open_default_sink()?;
-    audio_device.log_on_drop(false);
+    let audio_device = if args.mute {
+        None
+    } else {
+        let mut audio_device = DeviceSinkBuilder::open_default_sink()?;
+        audio_device.log_on_drop(false);
+        Some(audio_device)
+    };
     let mut active_tone: Option<Player> = None;
 
     // Keying state
@@ -207,7 +212,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             KeyEventKind::Press => match key.code {
                 KeyCode::Char(' ') if key_pressed_at.is_none() => {
                     key_pressed_at = Some(Instant::now());
-                    if !args.mute {
+                    if let Some(audio_device) = &audio_device {
                         let player = Player::connect_new(audio_device.mixer());
                         let source = SineWave::new(600.0).amplify(0.20);
                         player.append(source);
