@@ -158,16 +158,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut letter_gap_added = false;
 
     let mut current_letter = String::new();
-    let mut morse_input = String::new();
-    let mut translation = String::new();
 
     loop {
         if let Some(signal_ended_at) = last_signal_ended_at {
             let gap = signal_ended_at.elapsed();
             if !letter_gap_added && gap >= letter_gap_threshold {
-                morse_input.push_str(&current_letter);
-                morse_input.push(' ');
-                translation.push(translate_letter(&current_letter));
                 current_letter.clear();
                 execute!(
                     stdout,
@@ -180,8 +175,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 letter_gap_added = true;
             }
             if gap >= word_gap_threshold {
-                morse_input.push_str("/ ");
-                translation.push(' ');
                 execute!(
                     stdout,
                     crossterm::cursor::MoveTo(current_morse_column, current_morse_row),
