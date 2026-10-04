@@ -81,6 +81,15 @@ static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
 #[derive(Parser, Debug)]
 #[command(version, about = "Live Morse code translator")]
 struct Args {
+    /// Length of a dah in dits
+    #[arg(long, default_value_t = 2)]
+    dah_threshold: u64,
+    /// Lenght of the pause that produces a letter in dits
+    #[arg(long, default_value_t = 2)]
+    letter_gap_threshold: u64,
+    /// Lenght of the pause that produces a word gap in dits
+    #[arg(long, default_value_t = 5)]
+    word_gap_threshold: u64,
     /// Mute beep sound
     #[arg(short, long)]
     mute: bool,
@@ -148,9 +157,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Following https://morsecode.world/international/timing.
     let dit_ms = 60_000 / (50 * args.wpm);
-    let dit_dah_threshold = Duration::from_millis(2 * dit_ms);
-    let letter_gap_threshold = Duration::from_millis(2 * dit_ms);
-    let word_gap_threshold = Duration::from_millis(5 * dit_ms);
+    let dah_threshold = Duration::from_millis(args.dah_threshold * dit_ms);
+    let letter_gap_threshold = Duration::from_millis(args.letter_gap_threshold * dit_ms);
+    let word_gap_threshold = Duration::from_millis(args.word_gap_threshold * dit_ms);
 
     let audio_device = if args.mute {
         None
@@ -240,11 +249,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         player.stop();
                     }
                     let duration = signal_ended_at - signal_started_at;
-                    let signal = if duration < dit_dah_threshold {
-                        '.'
-                    } else {
-                        '-'
-                    };
+                    let signal = if duration < dah_threshold { '.' } else { '-' };
                     current_letter.push(signal);
                     queue!(
                         stdout,
