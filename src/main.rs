@@ -15,22 +15,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Parser, Debug)]
-#[command(version, about = "Live Morse code translator")]
-struct Args {
-    /// Morse speed in words per minute
-    #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
-    wpm: u64,
-
-    /// Mute beep sound
-    #[arg(short, long)]
-    mute: bool,
-}
-
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
     HashMap::from([
+        // Letters
         (".-", 'A'),
         ("-...", 'B'),
         ("-.-.", 'C'),
@@ -57,6 +46,7 @@ static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
         ("-..-", 'X'),
         ("-.--", 'Y'),
         ("--..", 'Z'),
+        // Figures
         ("-----", '0'),
         (".----", '1'),
         ("..---", '2'),
@@ -67,13 +57,13 @@ static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
         ("--...", '7'),
         ("---..", '8'),
         ("----.", '9'),
+        // Punctuation
         (".-.-.-", '.'),
         ("--..--", ','),
         ("---...", ':'),
         ("..--..", '?'),
         (".----.", '\''),
         ("-....-", '-'),
-        ("/", ' '),
         ("-..-.", '/'),
         ("-.--.", '('),
         ("-.--.-", ')'),
@@ -81,8 +71,22 @@ static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
         ("-...-", '='),
         (".-.-.", '+'),
         (".--.-.", '@'),
+        // Word separator
+        ("/", ' '),
     ])
 });
+
+#[derive(Parser, Debug)]
+#[command(version, about = "Live Morse code translator")]
+struct Args {
+    /// Morse speed in words per minute
+    #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
+    wpm: u64,
+
+    /// Mute beep sound
+    #[arg(short, long)]
+    mute: bool,
+}
 
 struct RawModeGuard {
     keyboard_enhancement_enabled: bool,
@@ -128,14 +132,7 @@ fn translate(line: &str) -> String {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // INFO: following https://morsecode.world/international/timing
-    let dit_ms: u64 = 60_000 / (50 * args.wpm);
-    let dit_dah_threshold: Duration = Duration::from_millis(2 * dit_ms);
-    let letter_gap_threshold: Duration = Duration::from_millis(2 * dit_ms);
-    let word_gap_threshold: Duration = Duration::from_millis(5 * dit_ms);
-
     let mut stdout = io::stdout().lock();
-
     let _raw_mode = RawModeGuard::enable()?;
 
     let (start_column, mut start_row) = crossterm::cursor::position()?;
@@ -148,14 +145,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         start_row = rows - 2;
     }
 
+    // Following https://morsecode.world/international/timing.
+    let dit_ms = 60_000 / (50 * args.wpm);
+    let dit_dah_threshold = Duration::from_millis(2 * dit_ms);
+    let letter_gap_threshold = Duration::from_millis(2 * dit_ms);
+    let word_gap_threshold = Duration::from_millis(5 * dit_ms);
+
     let mut audio_device = DeviceSinkBuilder::open_default_sink()?;
     audio_device.log_on_drop(false);
     let mut active_tone: Option<Player> = None;
 
+    // Keying state
     let mut key_pressed_at: Option<Instant> = None;
     let mut last_signal_ended_at: Option<Instant> = None;
     let mut letter_gap_added = false;
 
+    // Display state
     let mut display_needs_redraw = false;
     let mut morse_input = String::new();
 
