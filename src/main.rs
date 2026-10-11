@@ -274,3 +274,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::translate_letter;
+
+    #[test]
+    fn translates_single_element_letter() {
+        let result = translate_letter(".");
+        assert_eq!(result, 'E');
+    }
+
+    #[test]
+    fn translates_multi_element_letter() {
+        let result = translate_letter(".-");
+        assert_eq!(result, 'A');
+    }
+
+    #[test]
+    fn translates_number() {
+        let result = translate_letter("-----");
+        assert_eq!(result, '0');
+    }
+
+    #[test]
+    fn translates_punctuation() {
+        let result = translate_letter("--..--");
+        assert_eq!(result, ',');
+    }
+
+    #[test]
+    fn incomplete_sequence_returns_placeholder() {
+        let result = translate_letter("--..-");
+        assert_eq!(result, '_');
+    }
+
+    #[test]
+    fn unknown_sequence_returns_placeholder() {
+        let result = translate_letter("......");
+        assert_eq!(result, '_');
+    }
+
+    #[test]
+    fn empty_input_returns_placeholder() {
+        let result = translate_letter("");
+        assert_eq!(result, '_');
+    }
+
+    #[test]
+    fn invalid_symbols_return_placeholder() {
+        let result = translate_letter("abc");
+        assert_eq!(result, '_');
+    }
+
+    #[test]
+    fn translates_word_separator() {
+        let result = translate_letter("/");
+        assert_eq!(result, ' ');
+    }
+}
