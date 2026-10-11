@@ -81,14 +81,14 @@ static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
 #[derive(Parser, Debug)]
 #[command(version, about = "Live Morse code translator")]
 struct Args {
-    /// Length of a dah in dits
-    #[arg(long, default_value_t = 2)]
+    /// Minimum signal duration, in dits, classified as a dah
+    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=u64::MAX / 1_200))]
     dah_threshold: u64,
-    /// Length of the pause that produces a letter in dits
-    #[arg(long, default_value_t = 2)]
+    /// Silence threshold, in dits, that ends a letter
+    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=u64::MAX / 1_200))]
     letter_gap_threshold: u64,
-    /// Length of the pause that produces a word gap in dits
-    #[arg(long, default_value_t = 5)]
+    /// Silence threshold, in dits, that creates a word gap
+    #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=u64::MAX / 1_200))]
     word_gap_threshold: u64,
     /// Mute beep sound
     #[arg(short, long)]
