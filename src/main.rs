@@ -277,59 +277,187 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::translate_letter;
+    mod translate {
+        use super::super::translate_letter;
 
-    #[test]
-    fn translates_single_element_letter() {
-        let result = translate_letter(".");
-        assert_eq!(result, 'E');
+        #[test]
+        fn translates_single_element_letter() {
+            let result = translate_letter(".");
+            assert_eq!(result, 'E');
+        }
+
+        #[test]
+        fn translates_multi_element_letter() {
+            let result = translate_letter(".-");
+            assert_eq!(result, 'A');
+        }
+
+        #[test]
+        fn translates_number() {
+            let result = translate_letter("-----");
+            assert_eq!(result, '0');
+        }
+
+        #[test]
+        fn translates_punctuation() {
+            let result = translate_letter("--..--");
+            assert_eq!(result, ',');
+        }
+
+        #[test]
+        fn incomplete_sequence_returns_placeholder() {
+            let result = translate_letter("--..-");
+            assert_eq!(result, '_');
+        }
+
+        #[test]
+        fn unknown_sequence_returns_placeholder() {
+            let result = translate_letter("......");
+            assert_eq!(result, '_');
+        }
+
+        #[test]
+        fn empty_input_returns_placeholder() {
+            let result = translate_letter("");
+            assert_eq!(result, '_');
+        }
+
+        #[test]
+        fn invalid_symbols_return_placeholder() {
+            let result = translate_letter("abc");
+            assert_eq!(result, '_');
+        }
+
+        #[test]
+        fn translates_word_separator() {
+            let result = translate_letter("/");
+            assert_eq!(result, ' ');
+        }
     }
 
-    #[test]
-    fn translates_multi_element_letter() {
-        let result = translate_letter(".-");
-        assert_eq!(result, 'A');
-    }
+    mod cli {
+        use super::super::Args;
+        use clap::Parser;
 
-    #[test]
-    fn translates_number() {
-        let result = translate_letter("-----");
-        assert_eq!(result, '0');
-    }
+        #[test]
+        fn uses_defaults_without_flags() {
+            let args = Args::try_parse_from(["morsekit"]).expect("defaults should parse");
 
-    #[test]
-    fn translates_punctuation() {
-        let result = translate_letter("--..--");
-        assert_eq!(result, ',');
-    }
+            assert_eq!(args.dah_threshold, 2);
+            assert_eq!(args.letter_gap_threshold, 2);
+            assert_eq!(args.word_gap_threshold, 5);
+            assert!(!args.mute);
+            assert_eq!(args.pitch, 600.0);
+            assert_eq!(args.wpm, 12);
+        }
 
-    #[test]
-    fn incomplete_sequence_returns_placeholder() {
-        let result = translate_letter("--..-");
-        assert_eq!(result, '_');
-    }
+        #[test]
+        fn supplied_flags_override_defaults() {
+            let args = Args::try_parse_from([
+                "morsekit",
+                "--dah-threshold",
+                "3",
+                "--letter-gap-threshold",
+                "4",
+                "--word-gap-threshold",
+                "7",
+                "--mute",
+                "--pitch",
+                "750",
+                "--wpm",
+                "20",
+            ])
+            .expect("valid flags should parse");
 
-    #[test]
-    fn unknown_sequence_returns_placeholder() {
-        let result = translate_letter("......");
-        assert_eq!(result, '_');
-    }
+            assert_eq!(args.dah_threshold, 3);
+            assert_eq!(args.letter_gap_threshold, 4);
+            assert_eq!(args.word_gap_threshold, 7);
+            assert!(args.mute);
+            assert_eq!(args.pitch, 750.0);
+            assert_eq!(args.wpm, 20);
+        }
 
-    #[test]
-    fn empty_input_returns_placeholder() {
-        let result = translate_letter("");
-        assert_eq!(result, '_');
-    }
+        #[test]
+        fn accepts_short_flags() {
+            let args = Args::try_parse_from(["morsekit", "-m", "-p", "750", "-w", "20"])
+                .expect("short flags should parse");
 
-    #[test]
-    fn invalid_symbols_return_placeholder() {
-        let result = translate_letter("abc");
-        assert_eq!(result, '_');
-    }
+            assert!(args.mute);
+            assert_eq!(args.pitch, 750.0);
+            assert_eq!(args.wpm, 20);
+        }
 
-    #[test]
-    fn translates_word_separator() {
-        let result = translate_letter("/");
-        assert_eq!(result, ' ');
+        #[test]
+        fn thresholds_accept_range_boundaries() {
+            let maximum = (u64::MAX / 1_200).to_string();
+            for flag in [
+                "--dah-threshold",
+                "--letter-gap-threshold",
+                "--word-gap-threshold",
+            ] {
+                for value in ["1", maximum.as_str()] {
+                    assert!(
+                        Args::try_parse_from(["morsekit", flag, value]).is_ok(),
+                        "{flag} should accept {value}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn thresholds_reject_values_outside_range() {
+            let above_maximum = (u64::MAX / 1_200 + 1).to_string();
+            for flag in [
+                "--dah-threshold",
+                "--letter-gap-threshold",
+                "--word-gap-threshold",
+            ] {
+                for value in ["0", above_maximum.as_str()] {
+                    assert!(
+                        Args::try_parse_from(["morsekit", flag, value]).is_err(),
+                        "{flag} should reject {value}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn wpm_accepts_range_boundaries() {
+            for value in ["1", "50"] {
+                let args = Args::try_parse_from(["morsekit", "--wpm", value])
+                    .expect("WPM boundaries should parse");
+                assert_eq!(args.wpm.to_string(), value);
+            }
+        }
+
+        #[test]
+        fn wpm_rejects_values_outside_range() {
+            for value in ["0", "51"] {
+                assert!(
+                    Args::try_parse_from(["morsekit", "--wpm", value]).is_err(),
+                    "WPM should reject {value}"
+                );
+            }
+        }
+
+        #[test]
+        fn numeric_flags_reject_missing_or_invalid_values() {
+            for flag in [
+                "--dah-threshold",
+                "--letter-gap-threshold",
+                "--word-gap-threshold",
+                "--wpm",
+                "--pitch",
+            ] {
+                assert!(
+                    Args::try_parse_from(["morsekit", flag]).is_err(),
+                    "{flag} should require a value"
+                );
+                assert!(
+                    Args::try_parse_from(["morsekit", flag, "abc"]).is_err(),
+                    "{flag} should reject nonnumeric input"
+                );
+            }
+        }
     }
 }
