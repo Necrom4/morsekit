@@ -459,5 +459,12 @@ mod tests {
                 );
             }
         }
+
+        #[test]
+        fn argument_definitions_are_consistent() {
+            use clap::CommandFactory;
+
+            Args::command().debug_assert();
+        }
     }
 }
