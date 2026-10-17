@@ -1,6 +1,6 @@
 use clap::Parser;
 use crossterm::{
-    cursor::MoveTo,
+    cursor::{MoveTo, MoveUp},
     event::{
         Event::Key, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll, read,
@@ -140,6 +140,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut stdout = io::stdout().lock();
     let _raw_mode = RawModeGuard::enable()?;
+
+    let _ = write!(stdout, "morse: \n\rascii: ");
+    queue!(stdout, MoveUp(1))?;
 
     let (start_column, mut start_row) = crossterm::cursor::position()?;
     let (_, rows) = crossterm::terminal::size()?;
