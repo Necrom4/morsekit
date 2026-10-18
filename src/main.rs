@@ -13,7 +13,7 @@ use ratatui::{
     style::Stylize,
     symbols::border,
     text::Line,
-    widgets::{Block, Padding, Paragraph, Widget},
+    widgets::{Block, Padding, Paragraph, Widget, Wrap},
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source, source::SineWave};
 use std::{
@@ -292,6 +292,7 @@ impl Widget for &App {
             .padding(Padding::uniform(1));
         Paragraph::new(self.morse_buffer.as_str())
             .left_aligned()
+            .wrap(Wrap { trim: true })
             .block(block_top)
             .render(top, buf);
 
@@ -313,6 +314,7 @@ impl Widget for &App {
         }
         Paragraph::new(translation_line)
             .left_aligned()
+            .wrap(Wrap { trim: true })
             .block(block_bottom)
             .render(bottom, buf);
     }
