@@ -248,7 +248,7 @@ impl App {
                     self.last_signal_ended_at = None;
                     self.letter_gap_added = false;
                 }
-                // TODO: `delete` last word.
+                KeyCode::Backspace if self.key_pressed_at.is_none() => self.delete_last_word(),
                 _ => {}
             },
             KeyEventKind::Release => match key_event.code {
@@ -272,6 +272,14 @@ impl App {
             },
             _ => {}
         }
+    }
+
+    fn delete_last_word(&mut self) {
+        delete_last_word(&mut self.morse_buffer, "/ ");
+        delete_last_word(&mut self.translation_buffer, " ");
+        self.current_letter.clear();
+        self.last_signal_ended_at = None;
+        self.letter_gap_added = false;
     }
 
     fn exit(&mut self) {
@@ -301,6 +309,8 @@ impl Widget for &App {
         let instructions = Line::from(vec![
             " Space".blue().bold(),
             " to type | ".into(),
+            "Backspace".yellow().bold(),
+            " to delete a word | ".into(),
             "Esc".red().bold(),
             " to quit ".into(),
         ]);
@@ -323,6 +333,13 @@ impl Widget for &App {
 
 fn translate_letter(morse: &str) -> char {
     MORSE_TABLE.get(morse).copied().unwrap_or('_')
+}
+fn delete_last_word(text: &mut String, separator: &str) {
+    let trimmed = text.trim_end_matches(|c: char| separator.contains(c));
+    let end = trimmed
+        .rfind(separator)
+        .map_or(0, |index| index + separator.len());
+    text.truncate(end);
 }
 
 // TODO: print to stdout the result of the translation.
@@ -356,6 +373,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    mod delete_last_word {
+        use super::super::delete_last_word;
+
+        fn deleted(text: &str, separator: &str) -> String {
+            let mut text = text.to_string();
+            delete_last_word(&mut text, separator);
+            text
+        }
+
+        #[test]
+        fn removes_unfinished_last_word() {
+            assert_eq!(deleted("HELLO WO", " "), "HELLO ");
+        }
+
+        #[test]
+        fn removes_finished_last_word() {
+            assert_eq!(deleted("HELLO WORLD ", " "), "HELLO ");
+        }
+
+        #[test]
+        fn removes_only_word() {
+            assert_eq!(deleted("HELLO", " "), "");
+        }
+
+        #[test]
+        fn empty_text_stays_empty() {
+            assert_eq!(deleted("", " "), "");
+        }
+
+        #[test]
+        fn removes_unfinished_morse_word() {
+            assert_eq!(deleted(".... .. / .-- --- ", "/ "), ".... .. / ");
+        }
+
+        #[test]
+        fn removes_finished_morse_word() {
+            assert_eq!(deleted(".... .. / .-- --- / ", "/ "), ".... .. / ");
+        }
+
+        #[test]
+        fn removes_morse_letter_in_progress() {
+            assert_eq!(deleted(".... .. / .-", "/ "), ".... .. / ");
+        }
+    }
+
     mod translate {
         use super::super::translate_letter;
 
