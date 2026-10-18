@@ -1,22 +1,27 @@
 use clap::Parser;
 use crossterm::{
-    cursor::{MoveTo, MoveUp},
     event::{
-        Event::Key, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll, read,
+        self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll,
     },
-    execute, queue,
-    style::Print,
-    terminal::{disable_raw_mode, enable_raw_mode},
+    execute,
 };
-use rodio::{DeviceSinkBuilder, Player, Source, source::SineWave};
+use ratatui::{
+    DefaultTerminal, Frame,
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    style::Stylize,
+    symbols::border,
+    text::Line,
+    widgets::{Block, Padding, Paragraph, Widget},
+};
+use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source, source::SineWave};
 use std::{
     collections::HashMap,
-    io::{self, Write},
+    io,
     sync::LazyLock,
     time::{Duration, Instant},
 };
-
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
@@ -101,14 +106,12 @@ struct Args {
     wpm: u64,
 }
 
-struct RawModeGuard {
+struct KeyboardEnhancementGuard {
     keyboard_enhancement_enabled: bool,
 }
 
-impl RawModeGuard {
+impl KeyboardEnhancementGuard {
     fn enable() -> io::Result<Self> {
-        enable_raw_mode()?;
-
         let mut guard = Self {
             keyboard_enhancement_enabled: false,
         };
@@ -122,12 +125,196 @@ impl RawModeGuard {
     }
 }
 
-impl Drop for RawModeGuard {
+impl Drop for KeyboardEnhancementGuard {
     fn drop(&mut self) {
         if self.keyboard_enhancement_enabled {
             let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
         }
-        let _ = disable_raw_mode();
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Timing {
+    dah_threshold: Duration,
+    letter_gap_threshold: Duration,
+    word_gap_threshold: Duration,
+}
+
+impl Timing {
+    fn from_args(args: &Args) -> Self {
+        // Following https://morsecode.world/international/timing.
+        let dit_ms = 60_000 / (50 * args.wpm);
+        Self {
+            dah_threshold: Duration::from_millis(args.dah_threshold * dit_ms),
+            letter_gap_threshold: Duration::from_millis(args.letter_gap_threshold * dit_ms),
+            word_gap_threshold: Duration::from_millis(args.word_gap_threshold * dit_ms),
+        }
+    }
+}
+
+struct App {
+    timing: Timing,
+    // TODO: add alphabetical->morse mode (choose good and constant name for modes/buffers)
+    // TODO: config if naming should be `_buffer` and if `_translation` makes sense as an opposite,
+    // even in other mode.
+    current_letter: String,
+    morse_buffer: String,
+    translation_buffer: String,
+    // keying state
+    key_pressed_at: Option<Instant>,
+    last_signal_ended_at: Option<Instant>,
+    letter_gap_added: bool,
+    // audio
+    active_tone: Option<Player>,
+    audio_device: Option<MixerDeviceSink>,
+    pitch: f32,
+    exit: bool,
+}
+
+impl App {
+    fn new(timing: Timing, audio_device: Option<MixerDeviceSink>, pitch: f32) -> Self {
+        Self {
+            timing,
+            current_letter: String::new(),
+            morse_buffer: String::new(),
+            translation_buffer: String::new(),
+            key_pressed_at: None,
+            last_signal_ended_at: None,
+            letter_gap_added: false,
+            active_tone: None,
+            audio_device,
+            pitch,
+            exit: false,
+        }
+    }
+
+    fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| self.draw(frame))?;
+            self.handle_events()?;
+            self.tick();
+        }
+        Ok(())
+    }
+
+    fn draw(&self, frame: &mut Frame) {
+        frame.render_widget(self, frame.area());
+    }
+
+    fn handle_events(&mut self) -> io::Result<()> {
+        if poll(POLL_INTERVAL)?
+            && let Event::Key(key_event) = event::read()?
+        {
+            self.handle_key_event(key_event)
+        };
+        Ok(())
+    }
+
+    fn tick(&mut self) {
+        if let Some(signal_ended_at) = self.last_signal_ended_at {
+            let gap = signal_ended_at.elapsed();
+            if !self.letter_gap_added && gap >= self.timing.letter_gap_threshold {
+                self.translation_buffer
+                    .push(translate_letter(&self.current_letter));
+                self.current_letter.clear();
+                self.morse_buffer.push(' ');
+                self.letter_gap_added = true;
+            }
+            if gap >= self.timing.word_gap_threshold {
+                self.morse_buffer.push_str("/ ");
+                self.translation_buffer.push(' ');
+                self.last_signal_ended_at = None;
+            }
+        }
+    }
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match key_event.kind {
+            KeyEventKind::Press => match key_event.code {
+                // TODO: enable quitting on `q` in alphabetical->morse mode.
+                KeyCode::Esc => self.exit(),
+                KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.exit()
+                }
+                KeyCode::Char(' ') if self.key_pressed_at.is_none() => {
+                    self.key_pressed_at = Some(Instant::now());
+                    if let Some(audio_device) = &self.audio_device {
+                        let player = Player::connect_new(audio_device.mixer());
+                        let source = SineWave::new(self.pitch).amplify(0.20);
+                        player.append(source);
+                        self.active_tone = Some(player);
+                    }
+                    self.last_signal_ended_at = None;
+                    self.letter_gap_added = false;
+                }
+                // TODO: `delete` last word.
+                _ => {}
+            },
+            KeyEventKind::Release => match key_event.code {
+                KeyCode::Char(' ') if let Some(signal_started_at) = self.key_pressed_at => {
+                    let signal_ended_at = Instant::now();
+                    if let Some(player) = self.active_tone.take() {
+                        player.stop();
+                    }
+                    let duration = signal_ended_at - signal_started_at;
+                    let signal = if duration < self.timing.dah_threshold {
+                        '.'
+                    } else {
+                        '-'
+                    };
+                    self.current_letter.push(signal);
+                    self.morse_buffer.push(signal);
+                    self.key_pressed_at.take();
+                    self.last_signal_ended_at = Some(signal_ended_at);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let layout = Layout::vertical([Constraint::Percentage(50), Constraint::Fill(1)]);
+        let [top, bottom] = layout.areas(area);
+
+        let title = Line::from(vec![" ".into(), " morsekit ".bold().on_red(), " ".into()]);
+        let morse_title = Line::from(" MORSE ".bold());
+        let block_top = Block::bordered()
+            .title(morse_title.left_aligned())
+            .title(title.centered())
+            .border_set(border::ROUNDED)
+            .padding(Padding::uniform(1));
+        Paragraph::new(self.morse_buffer.as_str())
+            .left_aligned()
+            .block(block_top)
+            .render(top, buf);
+
+        let translation_title = Line::from(" TRANSLATION ".bold());
+        let instructions = Line::from(vec![
+            " Space".blue().bold(),
+            " to type | ".into(),
+            "Esc".red().bold(),
+            " to quit ".into(),
+        ]);
+        let block_bottom = Block::bordered()
+            .title(translation_title.left_aligned())
+            .title_bottom(instructions.centered())
+            .border_set(border::ROUNDED)
+            .padding(Padding::uniform(1));
+        let mut translation_line = self.translation_buffer.clone();
+        if !self.current_letter.is_empty() {
+            translation_line.push(translate_letter(&self.current_letter));
+        }
+        Paragraph::new(translation_line)
+            .left_aligned()
+            .block(block_bottom)
+            .render(bottom, buf);
     }
 }
 
@@ -135,34 +322,11 @@ fn translate_letter(morse: &str) -> char {
     MORSE_TABLE.get(morse).copied().unwrap_or('_')
 }
 
+// TODO: make sure there's an error explanation when a terminal cannot handle release events and
+// also print to stdout the result of the translation.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-
-    let mut stdout = io::stdout().lock();
-    let _raw_mode = RawModeGuard::enable()?;
-
-    let _ = write!(stdout, "morse: \n\rascii: ");
-    queue!(stdout, MoveUp(1))?;
-
-    let (start_column, mut start_row) = crossterm::cursor::position()?;
-    let (_, rows) = crossterm::terminal::size()?;
-    if rows < 2 {
-        return Err(io::Error::other("terminal needs at least two rows").into());
-    }
-    if start_row.saturating_add(1) >= rows {
-        execute!(stdout, crossterm::terminal::ScrollUp(1))?;
-        start_row = rows - 2;
-    }
-    let mut current_morse_column = start_column;
-    let current_morse_row = start_row;
-    let mut current_translation_column = start_column;
-    let current_translation_row = start_row + 1;
-
-    // Following https://morsecode.world/international/timing.
-    let dit_ms = 60_000 / (50 * args.wpm);
-    let dah_threshold = Duration::from_millis(args.dah_threshold * dit_ms);
-    let letter_gap_threshold = Duration::from_millis(args.letter_gap_threshold * dit_ms);
-    let word_gap_threshold = Duration::from_millis(args.word_gap_threshold * dit_ms);
+    let timing = Timing::from_args(&args);
 
     let audio_device = if args.mute {
         None
@@ -171,109 +335,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         audio_device.log_on_drop(false);
         Some(audio_device)
     };
-    let mut active_tone: Option<Player> = None;
 
-    // Keying state
-    let mut key_pressed_at: Option<Instant> = None;
-    let mut last_signal_ended_at: Option<Instant> = None;
-    let mut letter_gap_added = false;
-
-    let mut current_letter = String::new();
-
-    loop {
-        if let Some(signal_ended_at) = last_signal_ended_at {
-            let gap = signal_ended_at.elapsed();
-            if !letter_gap_added && gap >= letter_gap_threshold {
-                current_letter.clear();
-                queue!(
-                    stdout,
-                    MoveTo(current_morse_column, current_morse_row),
-                    Print(" ")
-                )?;
-                stdout.flush()?;
-                current_morse_column += 1;
-                current_translation_column += 1;
-                letter_gap_added = true;
-            }
-            if gap >= word_gap_threshold {
-                queue!(
-                    stdout,
-                    MoveTo(current_morse_column, current_morse_row),
-                    Print("/ ")
-                )?;
-                stdout.flush()?;
-                current_morse_column += 2;
-                queue!(
-                    stdout,
-                    MoveTo(current_translation_column, current_translation_row,),
-                    Print(" ")
-                )?;
-                stdout.flush()?;
-                current_translation_column += 1;
-                last_signal_ended_at = None;
-            }
-        }
-
-        if !poll(POLL_INTERVAL)? {
-            continue;
-        }
-
-        let Key(key) = read()? else {
-            continue;
-        };
-
-        match key.kind {
-            KeyEventKind::Press => match key.code {
-                KeyCode::Char(' ') if key_pressed_at.is_none() => {
-                    key_pressed_at = Some(Instant::now());
-                    if let Some(audio_device) = &audio_device {
-                        let player = Player::connect_new(audio_device.mixer());
-                        let source = SineWave::new(args.pitch).amplify(0.20);
-                        player.append(source);
-                        active_tone = Some(player);
-                    }
-                    last_signal_ended_at = None;
-                    letter_gap_added = false;
-                }
-                _ => {}
-            },
-            KeyEventKind::Release => {
-                if key.code == KeyCode::Esc
-                    || (key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(KeyModifiers::CONTROL))
-                {
-                    break;
-                }
-                if let Some(signal_started_at) = key_pressed_at
-                    && key.code == KeyCode::Char(' ')
-                {
-                    let signal_ended_at = Instant::now();
-                    if let Some(player) = active_tone.take() {
-                        player.stop();
-                    }
-                    let duration = signal_ended_at - signal_started_at;
-                    let signal = if duration < dah_threshold { '.' } else { '-' };
-                    current_letter.push(signal);
-                    queue!(
-                        stdout,
-                        MoveTo(current_morse_column, current_morse_row),
-                        Print(signal)
-                    )?;
-                    stdout.flush()?;
-                    current_morse_column += 1;
-                    queue!(
-                        stdout,
-                        MoveTo(current_translation_column, current_translation_row,),
-                        Print(translate_letter(&current_letter))
-                    )?;
-                    stdout.flush()?;
-                    key_pressed_at.take();
-                    last_signal_ended_at = Some(signal_ended_at);
-                }
-            }
-            _ => {}
-        }
-    }
+    ratatui::run(|terminal| {
+        let _guard = KeyboardEnhancementGuard::enable()?;
+        App::new(timing, audio_device, args.pitch).run(terminal)
+    })?;
 
     Ok(())
 }
