@@ -1,14 +1,14 @@
 use clap::Parser;
-use crossterm::{
-    event::{
-        self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll,
-    },
-    execute,
-};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
+    crossterm::{
+        event::{
+            self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+            PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll,
+        },
+        execute,
+    },
     layout::{Constraint, Layout, Rect},
     style::Stylize,
     symbols::border,
