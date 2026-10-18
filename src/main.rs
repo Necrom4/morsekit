@@ -8,6 +8,7 @@ use ratatui::{
             PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll,
         },
         execute,
+        terminal::supports_keyboard_enhancement,
     },
     layout::{Constraint, Layout, Rect},
     style::Stylize,
@@ -324,10 +325,17 @@ fn translate_letter(morse: &str) -> char {
     MORSE_TABLE.get(morse).copied().unwrap_or('_')
 }
 
-// TODO: make sure there's an error explanation when a terminal cannot handle release events and
-// also print to stdout the result of the translation.
+// TODO: print to stdout the result of the translation.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if !supports_keyboard_enhancement()? {
+        eprintln!("error: this terminal does not support the Kitty keyboard protocol");
+        eprintln!("  your terminal won't pick up `KeyEventKind::Release`");
+        eprintln!(
+            "  help: consider using one of the listed terminals, see https://sw.kovidgoyal.net/kitty/keyboard-protocol/"
+        );
+        std::process::exit(1);
+    }
     let timing = Timing::from_args(&args);
 
     let audio_device = if args.mute {
