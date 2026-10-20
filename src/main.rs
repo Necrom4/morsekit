@@ -4,8 +4,8 @@ use ratatui::{
     buffer::Buffer,
     crossterm::{
         event::{
-            self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-            PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll,
+            Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+            PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll, read,
         },
         execute,
         terminal::supports_keyboard_enhancement,
@@ -131,6 +131,9 @@ impl Drop for KeyboardEnhancementGuard {
         if self.keyboard_enhancement_enabled {
             let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
         }
+        while let Ok(true) = poll(Duration::ZERO)
+            && read().is_ok()
+        {}
     }
 }
 
@@ -204,7 +207,7 @@ impl App {
 
     fn handle_events(&mut self) -> io::Result<()> {
         if poll(POLL_INTERVAL)?
-            && let Event::Key(key_event) = event::read()?
+            && let Event::Key(key_event) = read()?
         {
             self.handle_key_event(key_event)
         };
