@@ -158,12 +158,10 @@ impl Timing {
 
 struct App {
     timing: Timing,
-    // TODO: add alphabetical->morse mode (choose good and constant name for modes/buffers)
-    // TODO: config if naming should be `_buffer` and if `_translation` makes sense as an opposite,
-    // even in other mode.
-    current_letter: String,
-    morse_buffer: String,
-    translation_buffer: String,
+    // TODO: add a text->morse mode (`Mode::TextToMorse`).
+    pending_morse: String,
+    morse: String,
+    text: String,
     // keying state
     key_pressed_at: Option<Instant>,
     last_signal_ended_at: Option<Instant>,
@@ -179,9 +177,9 @@ impl App {
     fn new(timing: Timing, audio_device: Option<MixerDeviceSink>, pitch: f32) -> Self {
         Self {
             timing,
-            current_letter: String::new(),
-            morse_buffer: String::new(),
-            translation_buffer: String::new(),
+            pending_morse: String::new(),
+            morse: String::new(),
+            text: String::new(),
             key_pressed_at: None,
             last_signal_ended_at: None,
             letter_gap_added: false,
@@ -218,15 +216,14 @@ impl App {
         if let Some(signal_ended_at) = self.last_signal_ended_at {
             let gap = signal_ended_at.elapsed();
             if !self.letter_gap_added && gap >= self.timing.letter_gap_threshold {
-                self.translation_buffer
-                    .push(translate_letter(&self.current_letter));
-                self.current_letter.clear();
-                self.morse_buffer.push(' ');
+                self.text.push(decode(&self.pending_morse));
+                self.pending_morse.clear();
+                self.morse.push(' ');
                 self.letter_gap_added = true;
             }
             if gap >= self.timing.word_gap_threshold {
-                self.morse_buffer.push_str("/ ");
-                self.translation_buffer.push(' ');
+                self.morse.push_str("/ ");
+                self.text.push(' ');
                 self.last_signal_ended_at = None;
             }
         }
@@ -235,7 +232,7 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.kind {
             KeyEventKind::Press => match key_event.code {
-                // TODO: enable quitting on `q` in alphabetical->morse mode.
+                // TODO: enable quitting on `q` in text->morse mode.
                 KeyCode::Esc => self.exit(),
                 KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.exit()
@@ -266,8 +263,8 @@ impl App {
                     } else {
                         '-'
                     };
-                    self.current_letter.push(signal);
-                    self.morse_buffer.push(signal);
+                    self.pending_morse.push(signal);
+                    self.morse.push(signal);
                     self.key_pressed_at.take();
                     self.last_signal_ended_at = Some(signal_ended_at);
                 }
@@ -278,9 +275,9 @@ impl App {
     }
 
     fn delete_last_word(&mut self) {
-        delete_last_word(&mut self.morse_buffer, "/ ");
-        delete_last_word(&mut self.translation_buffer, " ");
-        self.current_letter.clear();
+        delete_last_word(&mut self.morse, "/ ");
+        delete_last_word(&mut self.text, " ");
+        self.pending_morse.clear();
         self.last_signal_ended_at = None;
         self.letter_gap_added = false;
     }
@@ -302,13 +299,13 @@ impl Widget for &App {
             .title(title.centered())
             .border_set(border::ROUNDED)
             .padding(Padding::uniform(1));
-        Paragraph::new(self.morse_buffer.as_str())
+        Paragraph::new(self.morse.as_str())
             .left_aligned()
             .wrap(Wrap { trim: true })
             .block(block_top)
             .render(top, buf);
 
-        let translation_title = Line::from(" TRANSLATION ".bold());
+        let text_title = Line::from(" TEXT ".bold());
         let instructions = Line::from(vec![
             " Space".blue().bold(),
             " to type | ".into(),
@@ -318,15 +315,15 @@ impl Widget for &App {
             " to quit ".into(),
         ]);
         let block_bottom = Block::bordered()
-            .title(translation_title.left_aligned())
+            .title(text_title.left_aligned())
             .title_bottom(instructions.centered())
             .border_set(border::ROUNDED)
             .padding(Padding::uniform(1));
-        let mut translation_line = self.translation_buffer.clone();
-        if !self.current_letter.is_empty() {
-            translation_line.push(translate_letter(&self.current_letter));
+        let mut text_line = self.text.clone();
+        if !self.pending_morse.is_empty() {
+            text_line.push(decode(&self.pending_morse));
         }
-        Paragraph::new(translation_line)
+        Paragraph::new(text_line)
             .left_aligned()
             .wrap(Wrap { trim: true })
             .block(block_bottom)
@@ -334,7 +331,7 @@ impl Widget for &App {
     }
 }
 
-fn translate_letter(morse: &str) -> char {
+fn decode(morse: &str) -> char {
     MORSE_TABLE.get(morse).copied().unwrap_or('_')
 }
 fn delete_last_word(text: &mut String, separator: &str) {
@@ -421,60 +418,60 @@ mod tests {
         }
     }
 
-    mod translate {
-        use super::super::translate_letter;
+    mod decode {
+        use super::super::decode;
 
         #[test]
-        fn translates_single_element_letter() {
-            let result = translate_letter(".");
+        fn decodes_single_element_letter() {
+            let result = decode(".");
             assert_eq!(result, 'E');
         }
 
         #[test]
-        fn translates_multi_element_letter() {
-            let result = translate_letter(".-");
+        fn decodes_multi_element_letter() {
+            let result = decode(".-");
             assert_eq!(result, 'A');
         }
 
         #[test]
-        fn translates_number() {
-            let result = translate_letter("-----");
+        fn decodes_number() {
+            let result = decode("-----");
             assert_eq!(result, '0');
         }
 
         #[test]
-        fn translates_punctuation() {
-            let result = translate_letter("--..--");
+        fn decodes_punctuation() {
+            let result = decode("--..--");
             assert_eq!(result, ',');
         }
 
         #[test]
         fn incomplete_sequence_returns_placeholder() {
-            let result = translate_letter("--..-");
+            let result = decode("--..-");
             assert_eq!(result, '_');
         }
 
         #[test]
         fn unknown_sequence_returns_placeholder() {
-            let result = translate_letter("......");
+            let result = decode("......");
             assert_eq!(result, '_');
         }
 
         #[test]
         fn empty_input_returns_placeholder() {
-            let result = translate_letter("");
+            let result = decode("");
             assert_eq!(result, '_');
         }
 
         #[test]
         fn invalid_symbols_return_placeholder() {
-            let result = translate_letter("abc");
+            let result = decode("abc");
             assert_eq!(result, '_');
         }
 
         #[test]
-        fn translates_word_separator() {
-            let result = translate_letter("/");
+        fn decodes_word_separator() {
+            let result = decode("/");
             assert_eq!(result, ' ');
         }
     }
