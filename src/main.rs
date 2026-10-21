@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Stylize,
     symbols::border,
-    text::Line,
+    text::{Line, Text},
     widgets::{Block, Padding, Paragraph, Widget, Wrap},
 };
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source, source::SineWave};
@@ -171,6 +171,13 @@ impl Timing {
     }
 }
 
+const MIN_WIDTH: u16 = 60;
+const MIN_HEIGHT: u16 = 10;
+
+fn is_too_small(width: u16, height: u16) -> bool {
+    width < MIN_WIDTH || height < MIN_HEIGHT
+}
+
 struct App {
     timing: Timing,
     // TODO: add a text->morse mode (`Mode::TextToMorse`).
@@ -185,6 +192,7 @@ struct App {
     active_tone: Option<Player>,
     audio_device: Option<MixerDeviceSink>,
     pitch: f32,
+    too_small: bool,
     exit: bool,
 }
 
@@ -201,12 +209,15 @@ impl App {
             active_tone: None,
             audio_device,
             pitch,
+            too_small: false,
             exit: false,
         }
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
+            let size = terminal.size()?;
+            self.too_small = is_too_small(size.width, size.height);
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events()?;
             self.tick();
@@ -252,7 +263,7 @@ impl App {
                 KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.exit()
                 }
-                KeyCode::Char(' ') if self.key_pressed_at.is_none() => {
+                KeyCode::Char(' ') if self.key_pressed_at.is_none() && !self.too_small => {
                     self.key_pressed_at = Some(Instant::now());
                     if let Some(audio_device) = &self.audio_device {
                         let player = Player::connect_new(audio_device.mixer());
@@ -263,7 +274,9 @@ impl App {
                     self.last_signal_ended_at = None;
                     self.letter_gap_added = false;
                 }
-                KeyCode::Backspace if self.key_pressed_at.is_none() => self.delete_last_word(),
+                KeyCode::Backspace if self.key_pressed_at.is_none() && !self.too_small => {
+                    self.delete_last_word()
+                }
                 _ => {}
             },
             KeyEventKind::Release => match key_event.code {
@@ -304,6 +317,21 @@ impl App {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        if is_too_small(area.width, area.height) {
+            let message = Text::from(vec![
+                Line::from("Terminal window too small".bold().red()),
+                Line::from(format!(
+                    "Resize to at least {MIN_WIDTH}x{MIN_HEIGHT} (now {}x{})",
+                    area.width, area.height
+                )),
+            ]);
+            Paragraph::new(message)
+                .centered()
+                .wrap(Wrap { trim: true })
+                .render(area, buf);
+            return;
+        }
+
         let layout = Layout::vertical([Constraint::Percentage(50), Constraint::Fill(1)]);
         let [top, bottom] = layout.areas(area);
 
@@ -396,6 +424,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    mod layout {
+        use super::super::{App, Args, MIN_HEIGHT, MIN_WIDTH, Timing, is_too_small};
+        use clap::Parser;
+        use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+
+        fn render_text(width: u16, height: u16) -> String {
+            let args = Args::try_parse_from(["morsekit"]).expect("defaults should parse");
+            let app = App::new(Timing::from_args(&args), None, 600.0);
+            let area = Rect::new(0, 0, width, height);
+            let mut buffer = Buffer::empty(area);
+            (&app).render(area, &mut buffer);
+            buffer.content().iter().map(|cell| cell.symbol()).collect()
+        }
+
+        #[test]
+        fn minimum_size_is_accepted() {
+            assert!(!is_too_small(MIN_WIDTH, MIN_HEIGHT));
+        }
+
+        #[test]
+        fn one_less_column_or_row_is_too_small() {
+            assert!(is_too_small(MIN_WIDTH - 1, MIN_HEIGHT));
+            assert!(is_too_small(MIN_WIDTH, MIN_HEIGHT - 1));
+        }
+
+        #[test]
+        fn small_terminal_shows_warning_instead_of_ui() {
+            let text = render_text(MIN_WIDTH - 1, MIN_HEIGHT);
+
+            assert!(text.contains("Terminal window too small"));
+            assert!(!text.contains("MORSE"));
+        }
+
+        #[test]
+        fn large_enough_terminal_shows_ui() {
+            let text = render_text(MIN_WIDTH, MIN_HEIGHT);
+
+            assert!(text.contains("MORSE"));
+            assert!(text.contains("Space to sign | Backspace to delete a word | Esc to quit"));
+            assert!(!text.contains("too small"));
+        }
+    }
+
     mod delete_last_word {
         use super::super::delete_last_word;
 
