@@ -44,3 +44,32 @@ fn invalid_wpm_reports_error_and_exits_with_status_two() {
     assert!(stderr.contains("--wpm"));
     assert!(stderr.contains("error:"));
 }
+
+#[test]
+fn invalid_zero_pitch_reports_error_and_exits_with_status_two() {
+    let output = Command::new(env!("CARGO_BIN_EXE_morsekit"))
+        .arg("--pitch")
+        .arg("0")
+        .output()
+        .expect("--pitch should launch with invalid arguments");
+    let stderr = String::from_utf8(output.stderr).expect("output should contain error");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains("--pitch"));
+    assert!(stderr.contains("error:"));
+}
+
+#[test]
+fn invalid_negative_pitch_reports_error_and_exits_with_status_two() {
+    let output = Command::new(env!("CARGO_BIN_EXE_morsekit"))
+        .arg("--pitch=-10")
+        .output()
+        .expect("--pitch should launch with invalid arguments");
+    let stderr = String::from_utf8(output.stderr).expect("output should contain error");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains("--pitch"));
+    assert!(stderr.contains("error:"));
+}

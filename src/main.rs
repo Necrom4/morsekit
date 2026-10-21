@@ -100,8 +100,8 @@ struct Args {
     #[arg(short, long)]
     mute: bool,
     /// Tone frequency in Hz
-    #[arg(short, long, default_value_t = 600.0)]
-    pitch: f32,
+    #[arg(short, long, default_value_t = 600, value_parser = clap::value_parser!(u16).range(220..=880))]
+    pitch: u16,
     /// Morse speed in words per minute
     #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
     wpm: u64,
@@ -365,7 +365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ratatui::run(|terminal| {
         let _guard = KeyboardEnhancementGuard::enable()?;
-        App::new(timing, audio_device, args.pitch).run(terminal)
+        App::new(timing, audio_device, f32::from(args.pitch)).run(terminal)
     })?;
 
     Ok(())
@@ -488,7 +488,7 @@ mod tests {
             assert_eq!(args.letter_gap_threshold, 2);
             assert_eq!(args.word_gap_threshold, 5);
             assert!(!args.mute);
-            assert_eq!(args.pitch, 600.0);
+            assert_eq!(args.pitch, 600);
             assert_eq!(args.wpm, 12);
         }
 
@@ -514,7 +514,7 @@ mod tests {
             assert_eq!(args.letter_gap_threshold, 4);
             assert_eq!(args.word_gap_threshold, 7);
             assert!(args.mute);
-            assert_eq!(args.pitch, 750.0);
+            assert_eq!(args.pitch, 750);
             assert_eq!(args.wpm, 20);
         }
 
@@ -524,7 +524,7 @@ mod tests {
                 .expect("short flags should parse");
 
             assert!(args.mute);
-            assert_eq!(args.pitch, 750.0);
+            assert_eq!(args.pitch, 750);
             assert_eq!(args.wpm, 20);
         }
 
@@ -578,6 +578,25 @@ mod tests {
                     Args::try_parse_from(["morsekit", "--wpm", value]).is_err(),
                     "WPM should reject {value}"
                 );
+            }
+        }
+
+        #[test]
+        fn pitch_rejects_values_outside_range() {
+            for value in ["0", "-10", "219", "881", "600.5", "nan", "inf"] {
+                assert!(
+                    Args::try_parse_from(["morsekit", "--pitch", value]).is_err(),
+                    "pitch should reject {value}"
+                );
+            }
+        }
+
+        #[test]
+        fn pitch_accepts_range_boundaries() {
+            for (value, expected) in [("220", 220), ("880", 880)] {
+                let args = Args::try_parse_from(["morsekit", "--pitch", value])
+                    .unwrap_or_else(|error| panic!("pitch should accept {value}: {error}"));
+                assert_eq!(args.pitch, expected);
             }
         }
 
