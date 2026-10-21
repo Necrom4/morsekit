@@ -3,6 +3,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
     crossterm::{
+        clipboard::CopyToClipboard,
         event::{
             Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
             PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags, poll, read,
@@ -24,6 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
+const COPIED_MESSAGE_DURATION: Duration = Duration::from_secs(2);
 
 static MORSE_TABLE: LazyLock<HashMap<&str, char>> = LazyLock::new(|| {
     HashMap::from([
@@ -171,7 +173,7 @@ impl Timing {
     }
 }
 
-const MIN_WIDTH: u16 = 60;
+const MIN_WIDTH: u16 = 77;
 const MIN_HEIGHT: u16 = 10;
 
 fn is_too_small(width: u16, height: u16) -> bool {
@@ -193,6 +195,7 @@ struct App {
     audio_device: Option<MixerDeviceSink>,
     pitch: f32,
     too_small: bool,
+    copied_at: Option<Instant>,
     exit: bool,
 }
 
@@ -210,6 +213,7 @@ impl App {
             audio_device,
             pitch,
             too_small: false,
+            copied_at: None,
             exit: false,
         }
     }
@@ -277,6 +281,9 @@ impl App {
                 KeyCode::Backspace if self.key_pressed_at.is_none() && !self.too_small => {
                     self.delete_last_word()
                 }
+                KeyCode::Char('y') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.copy_text()
+                }
                 _ => {}
             },
             KeyEventKind::Release => match key_event.code {
@@ -308,6 +315,29 @@ impl App {
         self.pending_morse.clear();
         self.last_signal_ended_at = None;
         self.letter_gap_added = false;
+    }
+
+    fn displayed_text(&self) -> String {
+        let mut text = self.text.clone();
+        if !self.pending_morse.is_empty() {
+            text.push(decode(&self.pending_morse));
+        }
+        text
+    }
+
+    fn copy_text(&mut self) {
+        let text = self.displayed_text();
+        let text = text.trim();
+        if !text.is_empty()
+            && execute!(io::stdout(), CopyToClipboard::to_clipboard_from(text)).is_ok()
+        {
+            self.copied_at = Some(Instant::now());
+        }
+    }
+
+    fn recently_copied(&self) -> bool {
+        self.copied_at
+            .is_some_and(|copied_at| copied_at.elapsed() < COPIED_MESSAGE_DURATION)
     }
 
     fn exit(&mut self) {
@@ -349,24 +379,26 @@ impl Widget for &App {
             .render(top, buf);
 
         let text_title = Line::from(" TEXT ".bold());
-        let instructions = Line::from(vec![
-            " Space".blue().bold(),
-            " to sign | ".into(),
-            "Backspace".yellow().bold(),
-            " to delete a word | ".into(),
-            "Esc".red().bold(),
-            " to quit ".into(),
-        ]);
+        let instructions = if self.recently_copied() {
+            Line::from(" Copied to clipboard ".green().bold())
+        } else {
+            Line::from(vec![
+                " Space".blue().bold(),
+                " to sign | ".into(),
+                "Backspace".yellow().bold(),
+                " to delete a word | ".into(),
+                "Ctrl-Y".green().bold(),
+                " to copy | ".into(),
+                "Esc".red().bold(),
+                " to quit ".into(),
+            ])
+        };
         let block_bottom = Block::bordered()
             .title(text_title.left_aligned())
             .title_bottom(instructions.centered())
             .border_set(border::ROUNDED)
             .padding(Padding::uniform(1));
-        let mut text_line = self.text.clone();
-        if !self.pending_morse.is_empty() {
-            text_line.push(decode(&self.pending_morse));
-        }
-        Paragraph::new(text_line)
+        Paragraph::new(self.displayed_text())
             .left_aligned()
             .wrap(Wrap { trim: true })
             .block(block_bottom)
@@ -385,7 +417,6 @@ fn delete_last_word(text: &mut String, separator: &str) {
     text.truncate(end);
 }
 
-// TODO: print to stdout the result of the translation.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     if let Err(error) = args.validate() {
@@ -425,17 +456,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     mod layout {
-        use super::super::{App, Args, MIN_HEIGHT, MIN_WIDTH, Timing, is_too_small};
+        use super::super::{
+            App, Args, COPIED_MESSAGE_DURATION, MIN_HEIGHT, MIN_WIDTH, Timing, is_too_small,
+        };
         use clap::Parser;
         use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+        use std::time::Instant;
 
-        fn render_text(width: u16, height: u16) -> String {
+        fn app() -> App {
             let args = Args::try_parse_from(["morsekit"]).expect("defaults should parse");
-            let app = App::new(Timing::from_args(&args), None, 600.0);
+            App::new(Timing::from_args(&args), None, 600.0)
+        }
+
+        fn render_app(app: &App, width: u16, height: u16) -> String {
             let area = Rect::new(0, 0, width, height);
             let mut buffer = Buffer::empty(area);
-            (&app).render(area, &mut buffer);
+            app.render(area, &mut buffer);
             buffer.content().iter().map(|cell| cell.symbol()).collect()
+        }
+
+        fn render_text(width: u16, height: u16) -> String {
+            render_app(&app(), width, height)
         }
 
         #[test]
@@ -462,8 +503,41 @@ mod tests {
             let text = render_text(MIN_WIDTH, MIN_HEIGHT);
 
             assert!(text.contains("MORSE"));
-            assert!(text.contains("Space to sign | Backspace to delete a word | Esc to quit"));
+            assert!(text.contains(
+                "Space to sign | Backspace to delete a word | Ctrl-Y to copy | Esc to quit"
+            ));
             assert!(!text.contains("too small"));
+        }
+
+        #[test]
+        fn footer_confirms_a_recent_copy() {
+            let mut app = app();
+            app.copied_at = Some(Instant::now());
+
+            let text = render_app(&app, MIN_WIDTH, MIN_HEIGHT);
+
+            assert!(text.contains("Copied to clipboard"));
+            assert!(!text.contains("Ctrl-Y to copy"));
+        }
+
+        #[test]
+        fn footer_shows_hints_again_after_the_copy_message() {
+            let mut app = app();
+            app.copied_at = Instant::now().checked_sub(COPIED_MESSAGE_DURATION);
+
+            let text = render_app(&app, MIN_WIDTH, MIN_HEIGHT);
+
+            assert!(text.contains("Ctrl-Y to copy"));
+            assert!(!text.contains("Copied to clipboard"));
+        }
+
+        #[test]
+        fn displayed_text_includes_the_letter_in_progress() {
+            let mut app = app();
+            app.text.push_str("SO");
+            app.pending_morse.push('-');
+
+            assert_eq!(app.displayed_text(), "SOT");
         }
     }
 
