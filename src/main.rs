@@ -376,7 +376,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audio_device = if args.mute {
         None
     } else {
-        let mut audio_device = DeviceSinkBuilder::open_default_sink()?;
+        let mut audio_device = DeviceSinkBuilder::open_default_sink().unwrap_or_else(|error| {
+            eprintln!("error: could not open the default audio output device");
+            eprintln!("  {error}");
+            eprintln!("  help: run with `--mute` to use morsekit without sound");
+            std::process::exit(1);
+        });
         audio_device.log_on_drop(false);
         Some(audio_device)
     };
