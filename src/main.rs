@@ -308,7 +308,7 @@ impl Widget for &App {
         let text_title = Line::from(" TEXT ".bold());
         let instructions = Line::from(vec![
             " Space".blue().bold(),
-            " to type | ".into(),
+            " to sign | ".into(),
             "Backspace".yellow().bold(),
             " to delete a word | ".into(),
             "Esc".red().bold(),
