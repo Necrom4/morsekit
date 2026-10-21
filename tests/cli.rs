@@ -73,3 +73,18 @@ fn invalid_negative_pitch_reports_error_and_exits_with_status_two() {
     assert!(stderr.contains("--pitch"));
     assert!(stderr.contains("error:"));
 }
+
+#[test]
+fn word_gap_threshold_smaller_than_letter_gap_threshold_reports_error_and_exits_with_status_two() {
+    let output = Command::new(env!("CARGO_BIN_EXE_morsekit"))
+        .args(["--word-gap-threshold", "1", "--letter-gap-threshold", "3"])
+        .output()
+        .expect("morsekit should launch with invalid arguments");
+    let stderr = String::from_utf8(output.stderr).expect("output should contain error");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains("error:"));
+    assert!(stderr.contains("--word-gap-threshold"));
+    assert!(stderr.contains("--letter-gap-threshold"));
+}

@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser, error::ErrorKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
@@ -105,6 +105,21 @@ struct Args {
     /// Morse speed in words per minute
     #[arg(short, long, default_value_t = 12, value_parser = clap::value_parser!(u64).range(1..=50))]
     wpm: u64,
+}
+
+impl Args {
+    fn validate(&self) -> Result<(), clap::Error> {
+        if self.word_gap_threshold < self.letter_gap_threshold {
+            return Err(Args::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--word-gap-threshold` ({}) must not be smaller than `--letter-gap-threshold` ({})",
+                    self.word_gap_threshold, self.letter_gap_threshold
+                ),
+            ));
+        }
+        Ok(())
+    }
 }
 
 struct KeyboardEnhancementGuard {
@@ -345,6 +360,9 @@ fn delete_last_word(text: &mut String, separator: &str) {
 // TODO: print to stdout the result of the translation.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if let Err(error) = args.validate() {
+        error.exit();
+    }
     if !supports_keyboard_enhancement()? {
         eprintln!("error: this terminal does not support the Kitty keyboard protocol");
         eprintln!("  your terminal won't pick up `KeyEventKind::Release`");
@@ -597,6 +615,34 @@ mod tests {
                 let args = Args::try_parse_from(["morsekit", "--pitch", value])
                     .unwrap_or_else(|error| panic!("pitch should accept {value}: {error}"));
                 assert_eq!(args.pitch, expected);
+            }
+        }
+
+        #[test]
+        fn word_gap_smaller_threshold_than_letter_gap_threshold_is_rejected() {
+            for flags in [
+                ["--word-gap-threshold", "1", "--letter-gap-threshold", "3"],
+                ["--word-gap-threshold", "1", "--wpm", "12"],
+                ["--letter-gap-threshold", "6", "--wpm", "12"],
+            ] {
+                let args = Args::try_parse_from(["morsekit"].into_iter().chain(flags))
+                    .expect("each flag is valid on its own");
+                assert!(args.validate().is_err(), "{flags:?} should be rejected");
+            }
+        }
+
+        #[test]
+        fn word_gap_threshold_equal_to_or_larger_than_letter_gap_threshold_is_accepted() {
+            for (word, letter) in ["5", "2", "3"].into_iter().zip(["2", "2", "3"]) {
+                let args = Args::try_parse_from([
+                    "morsekit",
+                    "--word-gap-threshold",
+                    word,
+                    "--letter-gap-threshold",
+                    letter,
+                ])
+                .expect("flags should parse");
+                assert!(args.validate().is_ok(), "{word} and {letter} should pass");
             }
         }
 
