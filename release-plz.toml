@@ -1,0 +1,5 @@
+[workspace]
+# Publish only when the release PR is merged, not on every push to master.
+release_always = false
+# Only open a release PR for changes users notice.
+release_commits = "^(feat|fix|perf)[(:!]"

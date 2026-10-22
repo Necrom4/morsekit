@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # rodio plays sound through ALSA on Linux, which needs its headers to build.
+      - name: Install ALSA headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      # mise installs the tool versions pinned in mise.toml, the same ones used locally.
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: rust hk taplo
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Runs the same steps as the git hooks, so hk.pkl stays the single source of truth.
+      - name: hk check
+        run: hk check --all
