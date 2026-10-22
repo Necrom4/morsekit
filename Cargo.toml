@@ -2,6 +2,13 @@
 name = "morsekit"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "A terminal Morse code keyer with live translation"
+license = "MIT"
+repository = "https://github.com/Necrom4/morsekit"
+readme = "README.md"
+keywords = ["morse", "morse-code", "tui", "terminal", "ratatui"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
